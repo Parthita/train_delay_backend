@@ -55,6 +55,10 @@ if not STATION_CODE_FILE.exists():
 app = Flask(__name__)
 pipeline = TrainPipeline()
 
+@app.route('/')
+def home():
+    return "Welcome to the Train API! Try /api/trains-between or /api/train-schedule"
+
 @app.route('/api/trains-between', methods=['GET'])
 def get_trains_between():
     try:
@@ -143,4 +147,4 @@ def health_check():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port) 
+    app.run(host='0.0.0.0', port=port)

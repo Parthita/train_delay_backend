@@ -8,7 +8,14 @@ def download_html(train_name: str, train_number: str):
     
     print(f"Downloading HTML for {train_name} ({train_number})...")
     
-    response = requests.get(url)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Connection': 'keep-alive',
+    }
+    
+    response = requests.get(url, headers=headers)
     
     if response.status_code == 200:
         # Save the HTML content to a file
@@ -21,7 +28,7 @@ def download_html(train_name: str, train_number: str):
         print(f"Failed to download the HTML. Status code: {response.status_code}")
         return None
 
-def extract_delay_data_from_html(html_file: str):
+def extract_delay_data_from_html(html_file: str, train_number: str):
     # Load the saved HTML file
     with open(html_file, "r", encoding="utf-8") as f:
         html = f.read()
@@ -29,55 +36,51 @@ def extract_delay_data_from_html(html_file: str):
     # Parse HTML using BeautifulSoup
     soup = BeautifulSoup(html, "html.parser")
 
-    # Extract the <script> tag containing the `et.rsStat.tooltipData` JavaScript
-    script_tag = soup.find("script", string=lambda text: text and 'et.rsStat.tooltipData' in text)
-    if not script_tag:
-        raise Exception("Could not find the JavaScript data in the script tag.")
+    # Find the script tag containing the delay data
+    script_tags = soup.find_all("script")
+    delay_data = None
     
-    script_content = script_tag.string
-    
-    # Extract the tooltipData array (JS object assignment)
-    match = re.search(r"et\.rsStat\.tooltipData\s*=\s*(\[[\s\S]+?\]);", script_content)
-    if not match:
-        raise Exception("Could not extract the tooltipData array.")
-    
-    js_array = match.group(1)
+    for script in script_tags:
+        if script.string and "et.rsStat.tooltipData" in script.string:
+            # Extract the JavaScript array
+            match = re.search(r"et\.rsStat\.tooltipData\s*=\s*(\[[\s\S]+?\]);", script.string)
+            if match:
+                js_array = match.group(1)
+                
+                # Clean up the JavaScript array to make it valid JSON
+                # Replace new Date() with ISO date string
+                js_array = re.sub(r'new Date\((\d+),(\d+),(\d+)\)', 
+                                lambda m: f'"{int(m[1])}-{int(m[2])+1:02d}-{int(m[3]):02d}"', 
+                                js_array)
+                
+                # Replace null with 0
+                js_array = js_array.replace("null", "0")
+                
+                # Remove trailing commas
+                js_array = re.sub(r",\s*]", "]", js_array)
+                js_array = re.sub(r",\s*}", "}", js_array)
+                
+                # Convert single quotes to double quotes
+                js_array = js_array.replace("'", '"')
+                
+                try:
+                    delay_data = json.loads(js_array)
+                    break
+                except json.JSONDecodeError as e:
+                    print(f"Error parsing delay data: {e}")
+                    continue
 
-    # --- CLEANING STEP: Make JS data valid JSON ---
-    # 1. Replace new Date(YYYY,MM,DD) with a proper ISO date string
-    js_array = re.sub(r'new Date\((\d+),(\d+),(\d+)\)', lambda m: f'"{int(m[1])}-{int(m[2])+1:02d}-{int(m[3]):02d}"', js_array)
-
-    # 2. Replace 'null' with '0' (as delays)
-    js_array = js_array.replace("null", "0")
-
-    # 3. Remove trailing commas in lists
-    js_array = re.sub(r",\s*]", "]", js_array)
-    js_array = re.sub(r",\s*}", "}", js_array)
-
-    # 4. Convert single quotes to double quotes (standard JSON format)
-    js_array = js_array.replace("'", '"')
-
-    # Debug: Print cleaned JS array before parsing
-    print("Cleaned JS Array:")
-    print(js_array)
-
-    # Try parsing the cleaned JSON
-    try:
-        data = json.loads(js_array)
-    except json.JSONDecodeError as e:
-        print("Failed to parse cleaned JSON from tooltipData.")
-        print(f"Error: {e}")
-        print("Here's the cleaned JS array that caused the issue:")
-        print(js_array)
+    if not delay_data:
+        print("No delay data found in HTML")
         return
 
-    # --- PROCESS DATA ---
-    # First row is column headers (station names)
-    station_names = [entry["label"] for entry in data[0][1:]]
-
+    # Process the delay data
+    # First row contains column headers (station names)
+    station_names = [entry["label"] for entry in delay_data[0][1:]]
+    
     # Remaining rows contain daily data
     records = []
-    for row in data[1:]:
+    for row in delay_data[1:]:
         date = row[0]
         for i, delay in enumerate(row[1:]):
             records.append({
@@ -86,13 +89,8 @@ def extract_delay_data_from_html(html_file: str):
                 "delay_minutes": delay
             })
 
-    # Output a few rows for debugging
-    for r in records[:10]:
-        print(f"{r['date']} - {r['station']} - {r['delay_minutes']} min")
-
     # Save to CSV
     import csv
-
     filename = f"{train_number}.csv"
     with open(filename, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["date", "station", "delay_minutes"])
@@ -100,9 +98,6 @@ def extract_delay_data_from_html(html_file: str):
         writer.writerows(records)
         print(f"\n✅ Delay data saved to {filename}")
 
-    
-
-# Example usage
 if __name__ == "__main__":
     train_name = input("Enter train name (e.g., Poorva Express): ").strip()
     train_number = input("Enter train number (e.g., 12303): ").strip()
@@ -112,4 +107,4 @@ if __name__ == "__main__":
 
     # If HTML file is downloaded successfully, extract delay data
     if html_file:
-        extract_delay_data_from_html(html_file)
+        extract_delay_data_from_html(html_file, train_number)

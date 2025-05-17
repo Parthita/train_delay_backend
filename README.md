@@ -1,81 +1,140 @@
-# Train Delay Predictor Backend
+# Train Delay Prediction API
 
-A Flask-based backend service that predicts train delays using historical data and machine learning.
-
-## Features
-
-- Search for trains between stations
-- Get train schedules
-- Predict delays for specific trains
-- Get delay predictions for entire train routes
-- Automatic model training for new trains
+This API provides train delay predictions for Indian Railways trains. It offers two main endpoints:
+1. Get all trains between two stations with predicted delays
+2. Get complete schedule with predicted delays for a specific train
 
 ## API Endpoints
 
-### Search Trains
+### 1. Get Trains Between Stations
+```http
+POST /api/trains-between
 ```
-GET /api/search?source=STATION_CODE&dest=STATION_CODE&date=YYYY-MM-DD
-```
-Returns a list of trains running between source and destination stations on the specified date.
 
-### Get Train Schedule
+Request Body:
+```json
+{
+    "source_name": "Howrah Jn",
+    "source_code": "HWH",
+    "destination_name": "New Delhi",
+    "destination_code": "NDLS",
+    "date": "20250521"
+}
 ```
-GET /api/schedule?train_name=TRAIN_NAME&train_number=TRAIN_NUMBER
-```
-Returns the complete schedule for a specific train.
 
-### Get Delay Predictions
+Response:
+```json
+{
+    "status": "success",
+    "data": [
+        {
+            "train_number": "12303",
+            "train_name": "Poorva Express",
+            "source": "Howrah Jn",
+            "departure_time": "08:00",
+            "destination": "New Delhi",
+            "arrival_time": "08:00",
+            "duration": "24:00",
+            "source_delay": 0.0,
+            "destination_delay": 17.14,
+            "running_days": ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
+            "booking_classes": ["1A", "2A", "3A", "SL"],
+            "has_pantry": true
+        }
+    ]
+}
 ```
-GET /api/delays?train_name=TRAIN_NAME&train_number=TRAIN_NUMBER&date=YYYY-MM-DD
-```
-Returns predicted delays for a specific train on the specified date.
 
-### Get Route Delays
+### 2. Get Train Schedule with Delays
+```http
+POST /api/train-schedule
 ```
-GET /api/route-delays?train_name=TRAIN_NAME&train_number=TRAIN_NUMBER&date=YYYY-MM-DD
+
+Request Body:
+```json
+{
+    "train_name": "Poorva Express",
+    "train_number": "12303",
+    "date": "20250521"
+}
 ```
-Returns predicted delays for all stations in the train's route.
 
-## Setup
+Response:
+```json
+{
+    "status": "success",
+    "data": {
+        "train_number": "12303",
+        "train_name": "Poorva Express",
+        "schedule": [
+            {
+                "name": "Howrah Jn",
+                "station_code": "HWH",
+                "arrival": "Source",
+                "departure": "08:00",
+                "predicted_delay": 0.0,
+                "is_source": true
+            }
+        ]
+    }
+}
+```
 
-1. Install dependencies:
+### 3. Health Check
+```http
+GET /health
+```
+
+Response:
+```json
+{
+    "status": "healthy"
+}
+```
+
+## Setup Instructions
+
+1. Clone the repository
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Run the Flask application:
+3. Run the application:
 ```bash
 python app.py
 ```
 
-For production deployment on Render:
-1. Create a new Web Service
+## Deployment on Render
+
+1. Create a new Web Service on Render
 2. Connect your GitHub repository
-3. Set the build command: `pip install -r requirements.txt`
-4. Set the start command: `gunicorn app:app`
+3. Configure the service:
+   - Build Command: `pip install -r requirements.txt`
+   - Start Command: `gunicorn app:app`
+   - Python Version: 3.9 or higher
 
-## Project Structure
+## Directory Structure
+```
+api/
+├── app.py              # Main Flask application
+├── train_pipeline.py   # Core train processing logic
+├── requirements.txt    # Python dependencies
+├── Procfile           # Render deployment configuration
+└── README.md          # This documentation
+```
 
-- `app.py`: Main Flask application
-- `train_search.py`: Train search and schedule functionality
-- `delay_scrapper.py`: Scrapes train delay data
-- `model.py`: Machine learning model for delay prediction
-- `predict.py`: Delay prediction functionality
+## Error Handling
 
-## Data Flow
+The API returns appropriate HTTP status codes:
+- 200: Success
+- 400: Bad Request (missing required fields)
+- 404: Not Found (no trains/schedule found)
+- 500: Internal Server Error
 
-1. When a train is first requested:
-   - Scrape historical delay data
-   - Train a machine learning model
-   - Save model and data for future use
-
-2. For subsequent requests:
-   - Load saved model and data
-   - Make predictions based on historical patterns
-
-## Notes
-
-- The system automatically handles new trains by scraping their data and training models
-- Predictions are based on historical delay patterns and various features like day of week, month, etc.
-- The system uses XGBoost for machine learning predictions
-- All data is stored locally in CSV and pickle files 
+Error Response Format:
+```json
+{
+    "error": "Error message description"
+}
+``` 

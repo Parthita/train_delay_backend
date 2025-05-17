@@ -8,18 +8,7 @@ This API provides train delay predictions for Indian Railways trains. It offers 
 
 ### 1. Get Trains Between Stations
 ```http
-POST /api/trains-between
-```
-
-Request Body:
-```json
-{
-    "source_name": "Howrah Jn",
-    "source_code": "HWH",
-    "destination_name": "New Delhi",
-    "destination_code": "NDLS",
-    "date": "20250521"
-}
+GET /api/trains-between?source_name=Howrah%20Jn&source_code=HWH&destination_name=New%20Delhi&destination_code=NDLS&date=20250521
 ```
 
 Response:
@@ -47,16 +36,7 @@ Response:
 
 ### 2. Get Train Schedule with Delays
 ```http
-POST /api/train-schedule
-```
-
-Request Body:
-```json
-{
-    "train_name": "Poorva Express",
-    "train_number": "12303",
-    "date": "20250521"
-}
+GET /api/train-schedule?train_name=Poorva%20Express&train_number=12303&date=20250521
 ```
 
 Response:
@@ -112,16 +92,22 @@ python app.py
 3. Configure the service:
    - Build Command: `pip install -r requirements.txt`
    - Start Command: `gunicorn app:app`
-   - Python Version: 3.9 or higher
+   - Python Version: 3.11.11
 
 ## Directory Structure
 ```
 api/
 ├── app.py              # Main Flask application
 ├── train_pipeline.py   # Core train processing logic
-├── requirements.txt    # Python dependencies
-├── Procfile           # Render deployment configuration
-└── README.md          # This documentation
+├── model.py           # Model training
+├── predict.py         # Prediction logic
+├── scrape_trains.py   # Train scraping
+├── delay_scrapper.py  # Delay scraping
+├── scrape_schedule.py # Schedule scraping
+├── requirements.txt   # Python dependencies
+├── runtime.txt       # Python version
+├── Procfile          # Render deployment configuration
+└── README.md         # This documentation
 ```
 
 ## Error Handling

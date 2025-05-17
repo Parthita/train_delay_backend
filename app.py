@@ -3,6 +3,7 @@ from train_pipeline import TrainPipeline
 import logging
 from datetime import datetime
 import os
+from pathlib import Path
 
 # Set up logging
 logging.basicConfig(
@@ -10,6 +11,46 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Create necessary directories
+BASE_DIR = Path(__file__).parent
+PIPELINE_OUTPUT_DIR = BASE_DIR / "pipeline_output"
+PIPELINE_OUTPUT_DIR.mkdir(exist_ok=True)
+
+# Create default stationcode.json if it doesn't exist
+STATION_CODE_FILE = PIPELINE_OUTPUT_DIR / "stationcode.json"
+if not STATION_CODE_FILE.exists():
+    default_station_codes = {
+        "HOWRAH JN": "HWH",
+        "NEW DELHI": "NDLS",
+        "BARDDHAMAN JN": "BWN",
+        "DURGAPUR": "DGR",
+        "ASANSOL JN": "ASN",
+        "CHITTARANJAN": "CRJ",
+        "JAMTARA": "JMT",
+        "MADHUPUR JN": "MDP",
+        "JASIDIH JN": "JSME",
+        "JHAJHA": "JAJ",
+        "JAMUI": "JMU",
+        "KIUL JN": "KIUL",
+        "MOKAMEH JN": "MKA",
+        "BARH": "BARH",
+        "BAKHTIYARPUR JN": "BKP",
+        "PATNA JN": "PNBE",
+        "DANAPUR": "DNR",
+        "ARA": "ARA",
+        "BUXAR": "BXR",
+        "PT DEEN DAYAL UPADHYAY JN": "DDU",
+        "PRAYAGRAJ JN": "PRYJ",
+        "KANPUR CENTRAL": "CNB",
+        "ETAWAH": "ETW",
+        "TUNDLA JN": "TDL",
+        "ALIGARH JN": "ALJN"
+    }
+    import json
+    with open(STATION_CODE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(default_station_codes, f, indent=2, ensure_ascii=False)
+    logger.info(f"Created default stationcode.json at {STATION_CODE_FILE}")
 
 app = Flask(__name__)
 pipeline = TrainPipeline()

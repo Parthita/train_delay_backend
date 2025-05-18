@@ -1,13 +1,9 @@
-# Train Delay Prediction Backend
+# Train Delay Prediction API
 
-This is a Flask-based backend service for predicting train delays and comparing them with live status from etrain.info.
-
-## Features
-
-- Get trains between stations
-- Get train schedules with predicted delays
-- Compare predicted delays with live status from etrain.info
-- Health check endpoint
+This API provides train delay predictions for Indian Railways trains. It offers three main endpoints:
+1. Get all trains between two stations with predicted delays
+2. Get complete schedule with predicted delays for a specific train
+3. Get live running status with predicted delays
 
 ## API Endpoints
 
@@ -65,9 +61,9 @@ Response:
 }
 ```
 
-### 3. Get Live Status and Compare with Predictions
+### 3. Get Live Running Status with Predicted Delays
 ```http
-GET /api/live-status?train_number=12303
+GET /api/live-status?train_name=Vibhuti%20Express&train_number=12333
 ```
 
 Response:
@@ -75,10 +71,34 @@ Response:
 {
     "status": "success",
     "data": {
-        "live_status": "On time",
-        "predicted_delay": 0.0,
-        "comparison": "On time",
-        "accuracy": "Predicted delay is within ±15 minutes of actual delay"
+        "train_name": "Vibhuti Express",
+        "train_number": "12333",
+        "current_delay": "+15 min",
+        "current_station": {
+            "station": "Patna Jn",
+            "scheduled_arrival": "14:30",
+            "scheduled_departure": "14:35",
+            "actual_arrival": "14:45",
+            "delay": "+15 min"
+        },
+        "passed_stations": [
+            {
+                "station": "Howrah Jn",
+                "scheduled_arrival": "Source",
+                "scheduled_departure": "08:00",
+                "actual_arrival": "08:00",
+                "actual_departure": "08:00",
+                "delay": "0 min"
+            }
+        ],
+        "upcoming_stations": [
+            {
+                "station": "Danapur",
+                "scheduled_arrival": "15:30",
+                "scheduled_departure": "15:32",
+                "predicted_delay": 18.5
+            }
+        ]
     }
 }
 ```
@@ -146,24 +166,4 @@ Error Response Format:
 {
     "error": "Error message description"
 }
-```
-
-## Environment Variables
-
-- PORT: Port number for the Flask application (default: 5000)
-
-## Dependencies
-
-- Flask: Web framework
-- Requests: HTTP library
-- BeautifulSoup4: HTML parsing
-- Pandas: Data manipulation
-- NumPy: Numerical computing
-- Scikit-learn: Machine learning
-- Gunicorn: WSGI HTTP Server
-
-## Notes
-
-- The live status comparison feature scrapes data from etrain.info
-- Predictions are considered accurate if they are within ±15 minutes of actual delays
-- The service includes error handling and logging 
+``` 

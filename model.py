@@ -8,6 +8,30 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 
+class StationEncoder:
+    def __init__(self):
+        self.encoder = LabelEncoder()
+        self.known_stations = set()
+        
+    def fit(self, stations):
+        self.known_stations = set(stations)
+        self.encoder.fit(list(stations))
+        return self
+        
+    def transform(self, stations):
+        # Handle unknown stations by using a default encoding
+        unknown_stations = set(stations) - self.known_stations
+        if unknown_stations:
+            print(f"Warning: Unknown stations found: {unknown_stations}")
+            # Use the last known encoding + 1 for unknown stations
+            max_known_encoding = len(self.known_stations) - 1
+            return np.array([self.encoder.transform([s])[0] if s in self.known_stations 
+                           else max_known_encoding + 1 for s in stations])
+        return self.encoder.transform(stations)
+    
+    def get_known_stations(self):
+        return list(self.known_stations)
+
 def train_model(train_number):
     """Train a model for predicting delays for a given train."""
     # Create output directory
@@ -52,11 +76,11 @@ def train_model(train_number):
     df["day_sin"] = np.sin(2 * np.pi * df["day"] / 31)
     df["day_cos"] = np.cos(2 * np.pi * df["day"] / 31)
     
-    # Encode stations
-    encoder = LabelEncoder()
-    df["station_encoded"] = encoder.fit_transform(df["station"])
+    # Encode stations using our custom encoder
+    encoder = StationEncoder()
+    df["station_encoded"] = encoder.fit(df["station"]).transform(df["station"])
     print("\nStation encoding:")
-    for station, code in zip(encoder.classes_, range(len(encoder.classes_))):
+    for station, code in zip(encoder.get_known_stations(), range(len(encoder.get_known_stations()))):
         print(f"{station}: {code}")
     
     # Sort by station and date

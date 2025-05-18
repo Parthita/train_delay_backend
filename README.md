@@ -1,13 +1,8 @@
-# Train Delay Prediction Backend
+# Train Delay Prediction API
 
-This is a Flask-based backend service for predicting train delays and comparing them with live status from etrain.info.
-
-## Features
-
-- Get trains between stations
-- Get train schedules with predicted delays
-- Compare predicted delays with live status from etrain.info
-- Health check endpoint
+This API provides train delay predictions for Indian Railways trains. It offers two main endpoints:
+1. Get all trains between two stations with predicted delays
+2. Get complete schedule with predicted delays for a specific train
 
 ## API Endpoints
 
@@ -65,25 +60,7 @@ Response:
 }
 ```
 
-### 3. Get Live Status and Compare with Predictions
-```http
-GET /api/live-status?train_number=12303
-```
-
-Response:
-```json
-{
-    "status": "success",
-    "data": {
-        "live_status": "On time",
-        "predicted_delay": 0.0,
-        "comparison": "On time",
-        "accuracy": "Predicted delay is within ±15 minutes of actual delay"
-    }
-}
-```
-
-### 4. Health Check
+### 3. Health Check
 ```http
 GET /health
 ```
@@ -146,24 +123,4 @@ Error Response Format:
 {
     "error": "Error message description"
 }
-```
-
-## Environment Variables
-
-- PORT: Port number for the Flask application (default: 5000)
-
-## Dependencies
-
-- Flask: Web framework
-- Requests: HTTP library
-- BeautifulSoup4: HTML parsing
-- Pandas: Data manipulation
-- NumPy: Numerical computing
-- Scikit-learn: Machine learning
-- Gunicorn: WSGI HTTP Server
-
-## Notes
-
-- The live status comparison feature scrapes data from etrain.info
-- Predictions are considered accurate if they are within ±15 minutes of actual delays
-- The service includes error handling and logging 
+``` 

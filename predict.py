@@ -3,7 +3,6 @@ import numpy as np
 import joblib
 import os
 from pathlib import Path
-from model import StationEncoder
 
 def predict_delays(train_number, target_date):
     """Predict delays for a train on a given date."""
@@ -21,12 +20,12 @@ def predict_delays(train_number, target_date):
         print(f"Error loading files: {e}")
         return None
 
-    # Get stations in their route order by finding the first occurrence of each station
-    route_order = history.sort_values('date').groupby('station').first().sort_values('date').index.tolist()
+    # Filter stations from history - these define the train's route
+    stations = history["station"].unique()
     target_date = pd.to_datetime(target_date)
 
     # Prepare base DataFrame for prediction, one row per station for the target date
-    predict_df = pd.DataFrame({"station": route_order})
+    predict_df = pd.DataFrame({"station": stations})
     predict_df["date"] = target_date
 
     # Add date features same as training
@@ -40,7 +39,7 @@ def predict_delays(train_number, target_date):
     predict_df["day_sin"] = np.sin(2 * np.pi * predict_df["day"] / 31)
     predict_df["day_cos"] = np.cos(2 * np.pi * predict_df["day"] / 31)
 
-    # Encode stations using the custom encoder
+    # Encode stations
     predict_df["station_encoded"] = encoder.transform(predict_df["station"])
 
     # To get lag features, merge with history delays for past days for each station
@@ -63,8 +62,7 @@ def predict_delays(train_number, target_date):
             if station in station_medians:
                 predict_df.loc[mask, col] = predict_df.loc[mask, col].fillna(station_medians[station])
             else:
-                # For unknown stations, use the overall median delay
-                predict_df.loc[mask, col] = predict_df.loc[mask, col].fillna(history_sorted["delay_minutes"].median())
+                predict_df.loc[mask, col] = predict_df.loc[mask, col].fillna(0)
 
     # Rolling features: rolling mean (3 days), rolling median (7 days) before target date
     def get_rolling_feature(station, date, window, agg_func):
@@ -72,17 +70,17 @@ def predict_delays(train_number, target_date):
         s = history_sorted[(history_sorted["station"] == station) & (history_sorted["date"] < date)]
         if len(s) < window:
             # Use median of all delays for this station if not enough history
-            return s["delay_minutes"].median() if not s.empty else history_sorted["delay_minutes"].median()
+            return s["delay_minutes"].median() if not s.empty else 0
         if agg_func == "mean":
             return s.tail(window)["delay_minutes"].mean()
         if agg_func == "median":
             return s.tail(window)["delay_minutes"].median()
-        return history_sorted["delay_minutes"].median()
+        return 0
 
     rolling_means = []
     rolling_medians = []
 
-    for st in route_order:  # Use route_order instead of stations
+    for st in stations:
         rm = get_rolling_feature(st, target_date, 3, "mean")
         rolling_means.append(rm)
         rmd = get_rolling_feature(st, target_date, 7, "median")
@@ -106,11 +104,11 @@ def predict_delays(train_number, target_date):
     predicted = np.round(predicted, 2)
     predict_df["predicted_delay"] = predicted
 
-    # Convert to dictionary of station -> delay, maintaining route order
+    # Convert to dictionary of station -> delay
     delays = dict(zip(predict_df["station"], predict_df["predicted_delay"]))
     
     # Print predictions for debugging
-    print("\nPredicted delays (in route order):")
+    print("\nPredicted delays:")
     for station, delay in delays.items():
         print(f"{station}: {delay:.2f} minutes")
     

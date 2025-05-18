@@ -121,7 +121,7 @@ def get_live_train_status():
             return jsonify({'error': 'Failed to get live status'}), 404
             
         # Get predicted delays for upcoming stations
-        current_date = datetime.now().strftime('%Y%m%d')
+        current_date = datetime.now().strftime('%Y-%m-%d')
         predicted_delays = predict_delays(train_number, current_date)
         
         if predicted_delays:

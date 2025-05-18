@@ -3,6 +3,7 @@ import numpy as np
 import joblib
 import os
 from pathlib import Path
+from datetime import datetime
 
 def predict_delays(train_number, target_date):
     """Predict delays for a train on a given date."""
@@ -22,7 +23,14 @@ def predict_delays(train_number, target_date):
 
     # Filter stations from history - these define the train's route
     stations = history["station"].unique()
-    target_date = pd.to_datetime(target_date)
+    
+    # Convert target_date to datetime if it's a string
+    if isinstance(target_date, str):
+        try:
+            target_date = pd.to_datetime(target_date)
+        except ValueError as e:
+            print(f"Error parsing date {target_date}: {e}")
+            return None
 
     # Prepare base DataFrame for prediction, one row per station for the target date
     predict_df = pd.DataFrame({"station": stations})

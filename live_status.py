@@ -4,6 +4,9 @@ import json
 import logging
 from datetime import datetime
 import re
+import time
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
@@ -13,20 +16,35 @@ class LiveTrainStatus:
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
+        # Configure retry strategy
+        self.session = requests.Session()
+        retries = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504]
+        )
+        self.session.mount('https://', HTTPAdapter(max_retries=retries))
 
     def get_live_status(self, train_number):
         """Get live status of a train from etrain.info"""
         try:
             url = f"{self.base_url}/{train_number}/live"
-            response = requests.get(url, headers=self.headers)
+            logger.info(f"Fetching live status from: {url}")
+            
+            response = self.session.get(url, headers=self.headers, timeout=10)
             response.raise_for_status()
+            
+            if response.status_code == 404:
+                logger.error(f"Train {train_number} not found on etrain.info")
+                return self._create_error_response("Train not found")
             
             soup = BeautifulSoup(response.text, 'html.parser')
             
             # Find the table containing live status
             status_table = soup.find('table', {'class': 'table'})
             if not status_table:
-                return None
+                logger.error("Status table not found in response")
+                return self._create_error_response("Unable to parse train status")
                 
             stations_data = []
             rows = status_table.find_all('tr')[1:]  # Skip header row
@@ -52,6 +70,10 @@ class LiveTrainStatus:
                     }
                     stations_data.append(station)
             
+            if not stations_data:
+                logger.error("No station data found in response")
+                return self._create_error_response("No station data available")
+            
             # Organize stations into passed, current, and upcoming
             passed_stations = stations_data[:current_station_index] if current_station_index > 0 else []
             current_station = stations_data[current_station_index] if current_station_index >= 0 else None
@@ -61,12 +83,28 @@ class LiveTrainStatus:
                 'passed_stations': passed_stations,
                 'current_station': current_station,
                 'upcoming_stations': upcoming_stations,
-                'train_status': self._get_train_status(current_station, passed_stations)
+                'train_status': self._get_train_status(current_station, passed_stations),
+                'last_updated': datetime.now().isoformat()
             }
             
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error while fetching live status: {str(e)}")
+            return self._create_error_response("Network error while fetching train status")
         except Exception as e:
             logger.error(f"Error fetching live status: {str(e)}")
-            return None
+            return self._create_error_response("Error processing train status")
+
+    def _create_error_response(self, error_message):
+        """Create a standardized error response"""
+        return {
+            'error': True,
+            'error_message': error_message,
+            'passed_stations': [],
+            'current_station': None,
+            'upcoming_stations': [],
+            'train_status': 'unknown',
+            'last_updated': datetime.now().isoformat()
+        }
 
     def _parse_delay(self, delay_text):
         """Parse delay text to get delay in minutes"""
@@ -112,6 +150,9 @@ class LiveTrainStatus:
 
     def compare_with_prediction(self, live_status, predicted_delays):
         """Compare live status with predicted delays"""
+        if live_status.get('error', False):
+            return live_status
+
         comparison_results = {
             'passed_stations': [],
             'current_station': None,

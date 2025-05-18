@@ -157,8 +157,11 @@ def get_live_status():
         
         # Get live status from etrain.info
         current_status = live_status.get_live_status(train_number)
-        if not current_status:
-            return jsonify({'error': 'Failed to get live status'}), 404
+        if current_status.get('error', False):
+            return jsonify({
+                'status': 'error',
+                'error': current_status['error_message']
+            }), 404
             
         # Get predicted delays from pipeline
         predicted_delays = pipeline.get_predicted_delays(train_number)
@@ -173,6 +176,7 @@ def get_live_status():
         response_data = {
             'train_number': train_number,
             'train_status': current_status['train_status'],
+            'last_updated': current_status['last_updated'],
             'current_location': {
                 'station': current_status['current_station']['station_name'] if current_status['current_station'] else None,
                 'station_code': current_status['current_station']['station_code'] if current_status['current_station'] else None,

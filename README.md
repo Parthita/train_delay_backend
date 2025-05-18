@@ -1,9 +1,8 @@
 # Train Delay Prediction API
 
-This API provides train delay predictions for Indian Railways trains. It offers three main endpoints:
+This API provides train delay predictions for Indian Railways trains. It offers two main endpoints:
 1. Get all trains between two stations with predicted delays
 2. Get complete schedule with predicted delays for a specific train
-3. Get live running status with predicted delays
 
 ## API Endpoints
 
@@ -61,49 +60,7 @@ Response:
 }
 ```
 
-### 3. Get Live Running Status with Predicted Delays
-```http
-GET /api/live-status?train_name=Vibhuti%20Express&train_number=12333
-```
-
-Response:
-```json
-{
-    "status": "success",
-    "data": {
-        "train_name": "Vibhuti Express",
-        "train_number": "12333",
-        "current_delay": "+15 min",
-        "current_station": {
-            "station": "Patna Jn",
-            "scheduled_arrival": "14:30",
-            "scheduled_departure": "14:35",
-            "actual_arrival": "14:45",
-            "delay": "+15 min"
-        },
-        "passed_stations": [
-            {
-                "station": "Howrah Jn",
-                "scheduled_arrival": "Source",
-                "scheduled_departure": "08:00",
-                "actual_arrival": "08:00",
-                "actual_departure": "08:00",
-                "delay": "0 min"
-            }
-        ],
-        "upcoming_stations": [
-            {
-                "station": "Danapur",
-                "scheduled_arrival": "15:30",
-                "scheduled_departure": "15:32",
-                "predicted_delay": 18.5
-            }
-        ]
-    }
-}
-```
-
-### 4. Health Check
+### 3. Health Check
 ```http
 GET /health
 ```

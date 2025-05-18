@@ -3,8 +3,6 @@ from train_pipeline import TrainPipeline
 import logging
 from datetime import datetime
 import os
-from live_status_scraper import get_live_status
-from predict import predict_delays
 
 # Set up logging
 logging.basicConfig(
@@ -92,62 +90,6 @@ def get_train_schedule():
         return jsonify({
             'status': 'success',
             'data': schedule
-        })
-        
-    except Exception as e:
-        logger.error(f"Error processing request: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/live-status', methods=['GET'])
-def get_live_train_status():
-    try:
-        # Get parameters from query string
-        train_name = request.args.get('train_name')
-        train_number = request.args.get('train_number')
-        
-        # Validate required fields
-        required_fields = {
-            'train_name': train_name,
-            'train_number': train_number
-        }
-        
-        for field, value in required_fields.items():
-            if not value:
-                return jsonify({'error': f'Missing required field: {field}'}), 400
-        
-        # Get live status from website
-        live_status = get_live_status(train_name, train_number)
-        if not live_status:
-            return jsonify({'error': 'Failed to get live status'}), 404
-            
-        # Get predicted delays for upcoming stations
-        current_date = datetime.now().strftime('%Y-%m-%d')
-        predicted_delays = predict_delays(train_number, current_date)
-        
-        if predicted_delays:
-            # Compare predicted delays with actual delays
-            current_delay = live_status['current_delay']
-            if current_delay:
-                try:
-                    actual_delay = int(current_delay.replace('+', '').replace(' min', ''))
-                    # Get predicted delay for current station
-                    current_station = live_status['current_station']['station']
-                    predicted_delay = predicted_delays.get(current_station, 0)
-                    
-                    # If prediction is within ±20 minutes of actual delay, use predictions for upcoming stations
-                    if abs(predicted_delay - actual_delay) <= 20:
-                        for station in live_status['upcoming_stations']:
-                            station_name = station['station']
-                            if station_name in predicted_delays:
-                                station['predicted_delay'] = predicted_delays[station_name]
-                            else:
-                                station['predicted_delay'] = None
-                except ValueError:
-                    logger.warning(f"Could not parse current delay: {current_delay}")
-        
-        return jsonify({
-            'status': 'success',
-            'data': live_status
         })
         
     except Exception as e:

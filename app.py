@@ -169,12 +169,34 @@ def get_live_status():
             predicted_delays
         )
         
+        # Prepare the response
+        response_data = {
+            'train_number': train_number,
+            'train_status': current_status['train_status'],
+            'current_location': {
+                'station': current_status['current_station']['station_name'] if current_status['current_station'] else None,
+                'station_code': current_status['current_station']['station_code'] if current_status['current_station'] else None,
+                'current_delay': current_status['current_station']['delay'] if current_status['current_station'] else None,
+                'predicted_delay': comparison_results['current_station']['predicted_delay'] if comparison_results['current_station'] else None
+            },
+            'passed_stations': comparison_results['passed_stations'],
+            'upcoming_stations': comparison_results['upcoming_stations'],
+            'prediction_accuracy': {
+                'total_stations': len(comparison_results['passed_stations']),
+                'accurate_predictions': sum(1 for station in comparison_results['passed_stations'] 
+                                         if station.get('is_prediction_close') is True),
+                'accuracy_percentage': round(
+                    sum(1 for station in comparison_results['passed_stations'] 
+                        if station.get('is_prediction_close') is True) * 100 / 
+                    len(comparison_results['passed_stations'])
+                    if comparison_results['passed_stations'] else 0, 2
+                )
+            }
+        }
+        
         return jsonify({
             'status': 'success',
-            'data': {
-                'live_status': current_status,
-                'comparison': comparison_results
-            }
+            'data': response_data
         })
         
     except Exception as e:

@@ -30,20 +30,39 @@ class LiveTrainStatus:
                 
             stations_data = []
             rows = status_table.find_all('tr')[1:]  # Skip header row
+            current_station_index = -1
             
-            for row in rows:
+            for idx, row in enumerate(rows):
                 cols = row.find_all('td')
                 if len(cols) >= 4:
+                    status_text = cols[3].text.strip()
+                    is_current = 'Just' in status_text or 'Now' in status_text
+                    
+                    if is_current:
+                        current_station_index = idx
+                    
                     station = {
                         'station_name': cols[0].text.strip(),
                         'station_code': cols[1].text.strip(),
                         'scheduled_arrival': cols[2].text.strip(),
-                        'actual_arrival': cols[3].text.strip(),
-                        'delay': self._parse_delay(cols[3].text.strip())
+                        'actual_arrival': status_text,
+                        'delay': self._parse_delay(status_text),
+                        'is_current_station': is_current,
+                        'status': self._get_station_status(status_text)
                     }
                     stations_data.append(station)
             
-            return stations_data
+            # Organize stations into passed, current, and upcoming
+            passed_stations = stations_data[:current_station_index] if current_station_index > 0 else []
+            current_station = stations_data[current_station_index] if current_station_index >= 0 else None
+            upcoming_stations = stations_data[current_station_index + 1:] if current_station_index >= 0 else stations_data
+            
+            return {
+                'passed_stations': passed_stations,
+                'current_station': current_station,
+                'upcoming_stations': upcoming_stations,
+                'train_status': self._get_train_status(current_station, passed_stations)
+            }
             
         except Exception as e:
             logger.error(f"Error fetching live status: {str(e)}")
@@ -63,41 +82,95 @@ class LiveTrainStatus:
         except:
             return None
 
+    def _get_station_status(self, status_text):
+        """Get the status of a station"""
+        if 'Not Started' in status_text:
+            return 'not_started'
+        elif 'Not Arrived' in status_text:
+            return 'not_arrived'
+        elif 'Just' in status_text or 'Now' in status_text:
+            return 'current'
+        elif 'Departed' in status_text:
+            return 'departed'
+        elif 'Arrived' in status_text:
+            return 'arrived'
+        else:
+            return 'unknown'
+
+    def _get_train_status(self, current_station, passed_stations):
+        """Get overall train status"""
+        if not current_station:
+            return 'not_started'
+        
+        if current_station['status'] == 'current':
+            return 'running'
+        
+        if len(passed_stations) > 0:
+            return 'running'
+            
+        return 'unknown'
+
     def compare_with_prediction(self, live_status, predicted_delays):
         """Compare live status with predicted delays"""
-        comparison_results = []
+        comparison_results = {
+            'passed_stations': [],
+            'current_station': None,
+            'upcoming_stations': []
+        }
         
-        for station in live_status:
+        # Process passed stations
+        for station in live_status['passed_stations']:
             station_code = station['station_code']
             live_delay = station['delay']
+            predicted_delay = predicted_delays.get(station_code)
             
-            # Find predicted delay for this station
-            predicted_delay = next(
-                (delay for station_name, delay in predicted_delays.items() 
-                 if station_name == station_code),
-                None
-            )
-            
-            if live_delay is not None and predicted_delay is not None:
-                # Check if predictions are within ±15 minutes
-                is_close = abs(live_delay - predicted_delay) <= 15
-                
-                comparison_results.append({
-                    'station_code': station_code,
-                    'station_name': station['station_name'],
-                    'live_delay': live_delay,
-                    'predicted_delay': predicted_delay,
-                    'is_prediction_close': is_close,
-                    'difference': live_delay - predicted_delay
-                })
-            else:
-                comparison_results.append({
-                    'station_code': station_code,
-                    'station_name': station['station_name'],
-                    'live_delay': live_delay,
-                    'predicted_delay': predicted_delay,
-                    'is_prediction_close': None,
-                    'difference': None
-                })
+            comparison = self._create_comparison(station, live_delay, predicted_delay)
+            comparison_results['passed_stations'].append(comparison)
         
-        return comparison_results 
+        # Process current station
+        if live_status['current_station']:
+            station = live_status['current_station']
+            station_code = station['station_code']
+            live_delay = station['delay']
+            predicted_delay = predicted_delays.get(station_code)
+            
+            comparison_results['current_station'] = self._create_comparison(
+                station, live_delay, predicted_delay
+            )
+        
+        # Process upcoming stations
+        for station in live_status['upcoming_stations']:
+            station_code = station['station_code']
+            live_delay = station['delay']
+            predicted_delay = predicted_delays.get(station_code)
+            
+            comparison = self._create_comparison(station, live_delay, predicted_delay)
+            comparison_results['upcoming_stations'].append(comparison)
+        
+        return comparison_results
+
+    def _create_comparison(self, station, live_delay, predicted_delay):
+        """Create a comparison entry for a station"""
+        comparison = {
+            'station_code': station['station_code'],
+            'station_name': station['station_name'],
+            'scheduled_arrival': station['scheduled_arrival'],
+            'actual_arrival': station['actual_arrival'],
+            'live_delay': live_delay,
+            'predicted_delay': predicted_delay,
+            'status': station['status'],
+            'is_current_station': station['is_current_station']
+        }
+        
+        if live_delay is not None and predicted_delay is not None:
+            comparison.update({
+                'is_prediction_close': abs(live_delay - predicted_delay) <= 15,
+                'difference': live_delay - predicted_delay
+            })
+        else:
+            comparison.update({
+                'is_prediction_close': None,
+                'difference': None
+            })
+            
+        return comparison 

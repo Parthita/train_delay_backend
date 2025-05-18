@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from train_pipeline import TrainPipeline
+from live_status import LiveTrainStatus
 import logging
 from datetime import datetime
 import os
@@ -135,6 +136,45 @@ def get_train_schedule():
         return jsonify({
             'status': 'success',
             'data': schedule
+        })
+        
+    except Exception as e:
+        logger.error(f"Error processing request: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/live-status', methods=['GET'])
+def get_live_status():
+    try:
+        # Get parameters from query string
+        train_number = request.args.get('train_number')
+        
+        # Validate required fields
+        if not train_number:
+            return jsonify({'error': 'Missing required field: train_number'}), 400
+        
+        # Initialize live status checker
+        live_status = LiveTrainStatus()
+        
+        # Get live status from etrain.info
+        current_status = live_status.get_live_status(train_number)
+        if not current_status:
+            return jsonify({'error': 'Failed to get live status'}), 404
+            
+        # Get predicted delays from pipeline
+        predicted_delays = pipeline.get_predicted_delays(train_number)
+        
+        # Compare live status with predictions
+        comparison_results = live_status.compare_with_prediction(
+            current_status,
+            predicted_delays
+        )
+        
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'live_status': current_status,
+                'comparison': comparison_results
+            }
         })
         
     except Exception as e:

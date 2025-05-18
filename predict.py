@@ -3,6 +3,7 @@ import numpy as np
 import joblib
 import os
 from pathlib import Path
+from model import StationEncoder
 
 def predict_delays(train_number, target_date):
     """Predict delays for a train on a given date."""
@@ -39,7 +40,7 @@ def predict_delays(train_number, target_date):
     predict_df["day_sin"] = np.sin(2 * np.pi * predict_df["day"] / 31)
     predict_df["day_cos"] = np.cos(2 * np.pi * predict_df["day"] / 31)
 
-    # Encode stations
+    # Encode stations using the custom encoder
     predict_df["station_encoded"] = encoder.transform(predict_df["station"])
 
     # To get lag features, merge with history delays for past days for each station
@@ -62,7 +63,8 @@ def predict_delays(train_number, target_date):
             if station in station_medians:
                 predict_df.loc[mask, col] = predict_df.loc[mask, col].fillna(station_medians[station])
             else:
-                predict_df.loc[mask, col] = predict_df.loc[mask, col].fillna(0)
+                # For unknown stations, use the overall median delay
+                predict_df.loc[mask, col] = predict_df.loc[mask, col].fillna(history_sorted["delay_minutes"].median())
 
     # Rolling features: rolling mean (3 days), rolling median (7 days) before target date
     def get_rolling_feature(station, date, window, agg_func):
@@ -70,12 +72,12 @@ def predict_delays(train_number, target_date):
         s = history_sorted[(history_sorted["station"] == station) & (history_sorted["date"] < date)]
         if len(s) < window:
             # Use median of all delays for this station if not enough history
-            return s["delay_minutes"].median() if not s.empty else 0
+            return s["delay_minutes"].median() if not s.empty else history_sorted["delay_minutes"].median()
         if agg_func == "mean":
             return s.tail(window)["delay_minutes"].mean()
         if agg_func == "median":
             return s.tail(window)["delay_minutes"].median()
-        return 0
+        return history_sorted["delay_minutes"].median()
 
     rolling_means = []
     rolling_medians = []

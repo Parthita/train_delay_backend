@@ -27,9 +27,16 @@ def get_live_status(train_name: str, train_number: str):
         
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Find the live status table
-        status_table = soup.find('table', {'class': 'table'})
+        # Find the live status table - it's in a div with class 'bx3_brd'
+        status_div = soup.find('div', {'class': 'bx3_brd'})
+        if not status_div:
+            print("Could not find status div")
+            return None
+            
+        # Find the table inside the div
+        status_table = status_div.find('table', {'class': 'nocps'})
         if not status_table:
+            print("Could not find status table")
             return None
             
         # Initialize lists for different station categories
@@ -41,18 +48,31 @@ def get_live_status(train_name: str, train_number: str):
         for row in status_table.find_all('tr')[1:]:  # Skip header row
             cols = row.find_all('td')
             if len(cols) >= 4:
-                station = cols[1].text.strip()
+                # Get station name and code
+                station_cell = cols[1]
+                station_name = station_cell.find('div', class_='fixwelps').text.strip() if station_cell.find('div', class_='fixwelps') else station_cell.text.strip()
+                
+                # Get scheduled times
                 scheduled_arrival = cols[2].text.strip()
                 scheduled_departure = cols[3].text.strip()
-                actual_arrival = cols[4].text.strip() if len(cols) > 4 else None
-                actual_departure = cols[5].text.strip() if len(cols) > 5 else None
-                delay = cols[6].text.strip() if len(cols) > 6 else None
+                
+                # Get actual times and delay if available
+                actual_arrival = None
+                actual_departure = None
+                delay = None
+                
+                if len(cols) > 4:
+                    actual_arrival = cols[4].text.strip()
+                if len(cols) > 5:
+                    actual_departure = cols[5].text.strip()
+                if len(cols) > 6:
+                    delay = cols[6].text.strip()
                 
                 # Determine station status
                 if actual_arrival and actual_departure:
                     # Station has been passed
                     passed_stations.append({
-                        'station': station,
+                        'station': station_name,
                         'scheduled_arrival': scheduled_arrival,
                         'scheduled_departure': scheduled_departure,
                         'actual_arrival': actual_arrival,
@@ -62,7 +82,7 @@ def get_live_status(train_name: str, train_number: str):
                 elif actual_arrival and not actual_departure:
                     # Current station
                     current_station = {
-                        'station': station,
+                        'station': station_name,
                         'scheduled_arrival': scheduled_arrival,
                         'scheduled_departure': scheduled_departure,
                         'actual_arrival': actual_arrival,
@@ -71,7 +91,7 @@ def get_live_status(train_name: str, train_number: str):
                 else:
                     # Upcoming station
                     upcoming_stations.append({
-                        'station': station,
+                        'station': station_name,
                         'scheduled_arrival': scheduled_arrival,
                         'scheduled_departure': scheduled_departure
                     })
@@ -82,6 +102,12 @@ def get_live_status(train_name: str, train_number: str):
             current_delay = current_station['delay']
         elif passed_stations:
             current_delay = passed_stations[-1]['delay']
+            
+        # Get train info from the header
+        train_info = {}
+        header_div = soup.find('div', {'class': 'bx3_bgm'})
+        if header_div:
+            train_info['name'] = header_div.text.strip()
             
         return {
             'train_name': train_name,

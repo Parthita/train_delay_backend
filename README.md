@@ -1,126 +1,168 @@
-# Train Delay Prediction API
+# Train Delay Prediction System
 
-This API provides train delay predictions for Indian Railways trains. It offers two main endpoints:
-1. Get all trains between two stations with predicted delays
-2. Get complete schedule with predicted delays for a specific train
+A machine learning-based system for predicting train delays and providing real-time running status information. The system combines historical delay data with real-time running status to provide accurate delay predictions.
+
+## Features
+
+- Real-time train running status tracking
+- Machine learning-based delay prediction
+- Historical delay data analysis
+- API endpoints for train information and predictions
+- Support for multiple train routes and stations
 
 ## API Endpoints
 
 ### 1. Get Trains Between Stations
-```http
-GET /api/trains-between?source_name=Howrah%20Jn&source_code=HWH&destination_name=New%20Delhi&destination_code=NDLS&date=20250521
+```
+GET /api/trains-between
+```
+Parameters:
+- `source_name`: Source station name
+- `source_code`: Source station code
+- `destination_name`: Destination station name
+- `destination_code`: Destination station code
+- `date`: Journey date (YYYYMMDD format)
+
+Returns list of trains between stations with predicted delays.
+
+### 2. Get Train Schedule
+```
+GET /api/train-schedule
+```
+Parameters:
+- `train_name`: Name of the train
+- `train_number`: Train number
+- `date`: Journey date (YYYYMMDD format)
+
+Returns complete train schedule with predicted delays for each station.
+
+### 3. Get Train Running Status
+```
+GET /api/train-running-status
+```
+Parameters:
+- `train_number`: Train number
+- `station_name`: Current station name
+- `date`: Journey date (YYYYMMDD format)
+
+Returns current running status with delay predictions:
+- Current delay from real-time data
+- Predicted delay from ML model
+- Comparison of delays
+- Reliability indicator (if prediction is within 15 minutes)
+
+## Setup
+
+1. Install dependencies:
+```bash
+pip install -r requirements.txt
 ```
 
-Response:
-```json
-{
-    "status": "success",
-    "data": [
-        {
-            "train_number": "12303",
-            "train_name": "Poorva Express",
-            "source": "Howrah Jn",
-            "departure_time": "08:00",
-            "destination": "New Delhi",
-            "arrival_time": "08:00",
-            "duration": "24:00",
-            "source_delay": 0.0,
-            "destination_delay": 17.14,
-            "running_days": ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
-            "booking_classes": ["1A", "2A", "3A", "SL"],
-            "has_pantry": true
-        }
-    ]
-}
+2. Create necessary directories:
+```bash
+mkdir pipeline_output
+mkdir temp
 ```
 
-### 2. Get Train Schedule with Delays
-```http
-GET /api/train-schedule?train_name=Poorva%20Express&train_number=12303&date=20250521
+3. Run the Flask application:
+```bash
+python app.py
 ```
 
-Response:
+## Project Structure
+
+- `app.py`: Main Flask application with API endpoints
+- `train_pipeline.py`: Core pipeline for processing train data
+- `model.py`: Machine learning model for delay prediction
+- `predict.py`: Prediction functionality
+- `confirmtkt_scraper.py`: Scraper for real-time train status
+- `delay_scrapper.py`: Scraper for historical delay data
+- `scrape_trains.py`: Scraper for train information
+- `scrape_schedule.py`: Scraper for train schedules
+
+## How It Works
+
+1. **Data Collection**:
+   - Historical delay data is collected from etrain.info
+   - Real-time running status is fetched from confirmtkt.com
+
+2. **Model Training**:
+   - Historical delay data is processed and cleaned
+   - Features are extracted (date, station, previous delays, etc.)
+   - XGBoost model is trained to predict delays
+
+3. **Prediction**:
+   - Model predicts delays for each station
+   - Predictions are compared with real-time delays
+   - Reliability is determined based on prediction accuracy
+
+4. **API Integration**:
+   - Endpoints provide access to predictions and real-time data
+   - Responses include both current status and predictions
+   - Error handling for various scenarios
+
+## Response Examples
+
+### Train Running Status
 ```json
 {
     "status": "success",
     "data": {
-        "train_number": "12303",
-        "train_name": "Poorva Express",
+        "current_status": {
+            "train_info": {
+                "number": "12304",
+                "scraped_at": "2024-03-18 10:30:00"
+            },
+            "stations": [...]
+        },
+        "current_station": "New Delhi",
+        "current_delay": 15,
+        "predicted_delay": 12,
+        "delay_difference": 3,
+        "is_prediction_reliable": true
+    }
+}
+```
+
+### Train Schedule
+```json
+{
+    "status": "success",
+    "data": {
+        "train_info": {
+            "name": "Poorva Express",
+            "number": "12303"
+        },
         "schedule": [
             {
-                "name": "Howrah Jn",
-                "station_code": "HWH",
-                "arrival": "Source",
-                "departure": "08:00",
-                "predicted_delay": 0.0,
-                "is_source": true
-            }
+                "station": "Howrah",
+                "arrival": "23:00",
+                "departure": "23:15",
+                "predicted_delay": 0
+            },
+            ...
         ]
     }
 }
 ```
 
-### 3. Health Check
-```http
-GET /health
-```
-
-Response:
-```json
-{
-    "status": "healthy"
-}
-```
-
-## Setup Instructions
-
-1. Clone the repository
-2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-3. Run the application:
-```bash
-python app.py
-```
-
-## Deployment on Render
-
-1. Create a new Web Service on Render
-2. Connect your GitHub repository
-3. Configure the service:
-   - Build Command: `pip install -r requirements.txt`
-   - Start Command: `gunicorn app:app`
-   - Python Version: 3.11.11
-
-## Directory Structure
-```
-api/
-├── app.py              # Main Flask application
-├── train_pipeline.py   # Core train processing logic
-├── model.py           # Model training
-├── predict.py         # Prediction logic
-├── scrape_trains.py   # Train scraping
-├── delay_scrapper.py  # Delay scraping
-├── scrape_schedule.py # Schedule scraping
-├── requirements.txt   # Python dependencies
-├── runtime.txt       # Python version
-├── Procfile          # Render deployment configuration
-└── README.md         # This documentation
-```
-
 ## Error Handling
 
-The API returns appropriate HTTP status codes:
-- 200: Success
-- 400: Bad Request (missing required fields)
-- 404: Not Found (no trains/schedule found)
-- 500: Internal Server Error
+The system handles various error scenarios:
+- Missing or invalid parameters
+- Network errors during scraping
+- Missing historical data
+- Model prediction failures
+- Station name mismatches
 
-Error Response Format:
-```json
-{
-    "error": "Error message description"
-}
-``` 
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details. 

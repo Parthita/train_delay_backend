@@ -96,6 +96,122 @@ def get_train_schedule():
         logger.error(f"Error processing request: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/train-running-status', methods=['GET'])
+def get_train_running_status():
+    try:
+        # Get parameters from query string
+        train_number = request.args.get('train_number')
+        station_name = request.args.get('station_name')
+        date = request.args.get('date')
+        
+        # Validate required fields
+        required_fields = {
+            'train_number': train_number,
+            'station_name': station_name,
+            'date': date
+        }
+        
+        for field, value in required_fields.items():
+            if not value:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        # Get current running status from confirmtkt
+        from confirmtkt_scraper import get_train_status
+        current_status = get_train_status(train_number, station_name, date)
+        
+        if not current_status:
+            return jsonify({'error': 'Failed to get current running status'}), 404
+            
+        # Find current station in the status
+        current_station = None
+        for station in current_status['stations']:
+            if station['status'] == 'Pending':
+                current_station = station
+                break
+                
+        if not current_station:
+            return jsonify({
+                'status': 'success',
+                'message': 'Train journey completed',
+                'data': current_status
+            })
+            
+        # Get current delay from confirmtkt
+        current_delay = current_station.get('delay', '0')
+        if isinstance(current_delay, str):
+            # Extract numeric value from delay string (e.g., "15 min late" -> 15)
+            import re
+            delay_match = re.search(r'(\d+)', current_delay)
+            current_delay = int(delay_match.group(1)) if delay_match else 0
+            
+        # Try to get predicted delays
+        try:
+            from predict import predict_delays
+            predicted_delays = predict_delays(train_number, date)
+            
+            if predicted_delays:
+                # Try to find matching station in predicted delays
+                # First try exact match
+                predicted_delay = predicted_delays.get(current_station['station_name'])
+                
+                # If no exact match, try case-insensitive match
+                if predicted_delay is None:
+                    station_lower = current_station['station_name'].lower()
+                    for pred_station, delay in predicted_delays.items():
+                        if pred_station.lower() == station_lower:
+                            predicted_delay = delay
+                            break
+                
+                if predicted_delay is not None:
+                    # Compare delays
+                    delay_diff = abs(predicted_delay - current_delay)
+                    
+                    response_data = {
+                        'current_status': current_status,
+                        'current_station': current_station['station_name'],
+                        'current_delay': current_delay,
+                        'predicted_delay': predicted_delay,
+                        'delay_difference': delay_diff,
+                        'is_prediction_reliable': delay_diff <= 15
+                    }
+                else:
+                    # No matching station found in predictions
+                    response_data = {
+                        'current_status': current_status,
+                        'current_station': current_station['station_name'],
+                        'current_delay': current_delay,
+                        'prediction_available': False,
+                        'message': 'No prediction available for current station'
+                    }
+            else:
+                # No predictions available
+                response_data = {
+                    'current_status': current_status,
+                    'current_station': current_station['station_name'],
+                    'current_delay': current_delay,
+                    'prediction_available': False,
+                    'message': 'No predictions available for this train'
+                }
+        except Exception as e:
+            logger.error(f"Error getting predictions: {str(e)}")
+            # Return current status without predictions
+            response_data = {
+                'current_status': current_status,
+                'current_station': current_station['station_name'],
+                'current_delay': current_delay,
+                'prediction_available': False,
+                'message': 'Error getting predictions'
+            }
+        
+        return jsonify({
+            'status': 'success',
+            'data': response_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error processing request: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'healthy'})

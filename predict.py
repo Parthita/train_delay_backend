@@ -21,12 +21,12 @@ def predict_delays(train_number, target_date):
         print(f"Error loading files: {e}")
         return None
 
-    # Filter stations from history - these define the train's route
-    stations = history["station"].unique()
+    # Get stations in their route order by finding the first occurrence of each station
+    route_order = history.sort_values('date').groupby('station').first().sort_values('date').index.tolist()
     target_date = pd.to_datetime(target_date)
 
     # Prepare base DataFrame for prediction, one row per station for the target date
-    predict_df = pd.DataFrame({"station": stations})
+    predict_df = pd.DataFrame({"station": route_order})
     predict_df["date"] = target_date
 
     # Add date features same as training
@@ -82,7 +82,7 @@ def predict_delays(train_number, target_date):
     rolling_means = []
     rolling_medians = []
 
-    for st in stations:
+    for st in route_order:  # Use route_order instead of stations
         rm = get_rolling_feature(st, target_date, 3, "mean")
         rolling_means.append(rm)
         rmd = get_rolling_feature(st, target_date, 7, "median")
@@ -106,11 +106,11 @@ def predict_delays(train_number, target_date):
     predicted = np.round(predicted, 2)
     predict_df["predicted_delay"] = predicted
 
-    # Convert to dictionary of station -> delay
+    # Convert to dictionary of station -> delay, maintaining route order
     delays = dict(zip(predict_df["station"], predict_df["predicted_delay"]))
     
     # Print predictions for debugging
-    print("\nPredicted delays:")
+    print("\nPredicted delays (in route order):")
     for station, delay in delays.items():
         print(f"{station}: {delay:.2f} minutes")
     

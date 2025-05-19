@@ -3,9 +3,6 @@ import numpy as np
 import joblib
 import os
 from pathlib import Path
-import logging
-
-logger = logging.getLogger(__name__)
 
 def predict_delays(train_number, target_date):
     """Predict delays for a train on a given date."""
@@ -20,7 +17,7 @@ def predict_delays(train_number, target_date):
         encoder = joblib.load(encoder_file)
         history = pd.read_csv(history_file, parse_dates=["date"])
     except Exception as e:
-        logger.error(f"Error loading files: {e}")
+        print(f"Error loading files: {e}")
         return None
 
     # Filter stations from history - these define the train's route
@@ -42,14 +39,12 @@ def predict_delays(train_number, target_date):
     predict_df["day_sin"] = np.sin(2 * np.pi * predict_df["day"] / 31)
     predict_df["day_cos"] = np.cos(2 * np.pi * predict_df["day"] / 31)
 
-    # Encode stations with error handling for unseen stations
     try:
+        # Encode stations
         predict_df["station_encoded"] = encoder.transform(predict_df["station"])
-    except ValueError as e:
-        logger.warning(f"Found unseen stations in prediction data: {e}")
-        # For unseen stations, use the most common station code as default
-        default_code = encoder.transform([encoder.classes_[0]])[0]
-        predict_df["station_encoded"] = default_code
+    except Exception as e:
+        print(f"Error encoding stations: {e}")
+        return {station: "no data found" for station in stations}
 
     # To get lag features, merge with history delays for past days for each station
     history_sorted = history.sort_values(["station", "date"])
@@ -90,10 +85,15 @@ def predict_delays(train_number, target_date):
     rolling_medians = []
 
     for st in stations:
-        rm = get_rolling_feature(st, target_date, 3, "mean")
-        rolling_means.append(rm)
-        rmd = get_rolling_feature(st, target_date, 7, "median")
-        rolling_medians.append(rmd)
+        try:
+            rm = get_rolling_feature(st, target_date, 3, "mean")
+            rolling_means.append(rm)
+            rmd = get_rolling_feature(st, target_date, 7, "median")
+            rolling_medians.append(rmd)
+        except Exception as e:
+            print(f"Error calculating rolling features for station {st}: {e}")
+            rolling_means.append(0)
+            rolling_medians.append(0)
 
     predict_df["rolling_mean_3"] = rolling_means
     predict_df["rolling_median_7"] = rolling_medians
@@ -108,17 +108,21 @@ def predict_delays(train_number, target_date):
 
     X_pred = predict_df[features]
 
-    # Predict delays
-    predicted = model.predict(X_pred)
-    predicted = np.round(predicted, 2)
-    predict_df["predicted_delay"] = predicted
+    try:
+        # Predict delays
+        predicted = model.predict(X_pred)
+        predicted = np.round(predicted, 2)
+        predict_df["predicted_delay"] = predicted
+    except Exception as e:
+        print(f"Error predicting delays: {e}")
+        return {station: "no data found" for station in stations}
 
     # Convert to dictionary of station -> delay
     delays = dict(zip(predict_df["station"], predict_df["predicted_delay"]))
     
     # Print predictions for debugging
-    logger.info("\nPredicted delays:")
+    print("\nPredicted delays:")
     for station, delay in delays.items():
-        logger.info(f"{station}: {delay:.2f} minutes")
+        print(f"{station}: {delay:.2f} minutes")
     
     return delays

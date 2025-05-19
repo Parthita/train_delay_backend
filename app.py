@@ -49,20 +49,9 @@ def get_trains_between():
         if not trains:
             return jsonify({'error': 'No trains found between stations'}), 404
             
-        # Process trains to maintain original structure
-        processed_trains = []
-        for train in trains:
-            if 'error' in train:
-                # For failed trains, set delays to "No data found"
-                train['source_delay'] = "No data found"
-                train['destination_delay'] = "No data found"
-                # Remove error field to maintain original structure
-                train.pop('error', None)
-            processed_trains.append(train)
-            
         return jsonify({
             'status': 'success',
-            'data': processed_trains
+            'data': trains
         })
         
     except Exception as e:
@@ -97,14 +86,6 @@ def get_train_schedule():
         
         if not schedule:
             return jsonify({'error': 'Failed to get train schedule'}), 404
-            
-        # Process schedule to maintain original structure
-        for station in schedule['schedule']:
-            if station.get('error'):
-                # For failed stations, set predicted_delay to "No data found"
-                station['predicted_delay'] = "No data found"
-                # Remove error field to maintain original structure
-                station.pop('error', None)
             
         return jsonify({
             'status': 'success',

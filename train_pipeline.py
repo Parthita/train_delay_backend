@@ -45,7 +45,9 @@ class TrainPipeline:
         self.station_codes = {}
         try:
             with open(self.output_dir / 'stationcode.json', 'r') as f:
-                self.station_codes = json.load(f)
+                station_data = json.load(f)
+                # Convert to dictionary with stnCode as key
+                self.station_codes = {station['stnCode']: station for station in station_data.get('stations', [])}
         except Exception as e:
             logger.error(f"Failed to load station codes: {e}")
         
@@ -95,8 +97,7 @@ class TrainPipeline:
             html_file = download_html(train_name, train_number)
             if not html_file:
                 logger.error(f"Failed to download HTML for train {train_number}")
-                train_info['error'] = "Failed to download train history"
-                return train_info
+                return None
                 
             # Step 2: Extract delay data
             logger.info(f"Extracting delay data from HTML...")
@@ -105,51 +106,37 @@ class TrainPipeline:
             # Wait for CSV file to exist
             if not self._wait_for_file(csv_file):
                 logger.error(f"No delay history found for train {train_number}")
-                train_info['error'] = "No delay history found"
-                return train_info
+                return None
             
             # Check if we have enough data
             df = pd.read_csv(csv_file)
             if len(df) < 2:  # Need at least 2 samples for train/test split
                 logger.warning(f"Not enough delay data for train {train_number} (only {len(df)} samples)")
-                train_info['error'] = "Not enough delay data for prediction"
-                return train_info
+                return None
             
             # Step 3: Train model
             logger.info(f"Training model for train {train_number}...")
             model_result = train_model(train_number)  # model.py expects CSV in current directory
             if not model_result:
                 logger.warning(f"Could not train model for train {train_number} - skipping")
-                train_info['error'] = "Failed to train prediction model"
-                return train_info
+                return None
             
             # Wait for model files to be saved
             if not all(self._wait_for_file(path) for path in model_paths.values()):
                 logger.error(f"Model files not found for train {train_number}")
-                train_info['error'] = "Model files not found"
-                return train_info
+                return None
             
             # Step 4: Predict delays
             logger.info(f"Predicting delays for train {train_number} on {date}...")
             delays = predict_delays(train_number, date)
             if not delays:
                 logger.error(f"Failed to predict delays for train {train_number}")
-                train_info['error'] = "Failed to predict delays"
-                return train_info
+                return None
             
             # Debug logging for delays
             logger.info("\nRaw delays from model:")
             for station, delay in delays.items():
                 logger.info(f"{station}: {delay}")
-            
-            # Ensure source station has no negative delay
-            source_station = next((station for station in train_info.get('stations', []) 
-                                 if station.get('is_source', False)), None)
-            if source_station:
-                source_code = source_station.get('code')
-                if source_code in delays and delays[source_code] < 0:
-                    delays[source_code] = 0
-                    logger.info(f"Adjusted source station {source_code} delay to 0")
             
             # Add predicted delays to train info
             train_info['predicted_delays'] = delays
@@ -157,8 +144,10 @@ class TrainPipeline:
             return train_info
             
         except Exception as e:
-            logger.error(f"Error processing train {train_number}: {str(e)}")
-            train_info['error'] = str(e)
+            logger.error(f"Error processing train {train_number}: {e}")
+            # Return train info with "no data found" for all stations
+            train_info['predicted_delays'] = {station['code']: "no data found" 
+                                            for station in train_info.get('stations', [])}
             return train_info
         finally:
             # Clean up temporary files
@@ -166,9 +155,23 @@ class TrainPipeline:
             # Don't delete model files until after prediction is done
             self._cleanup_files(model_paths.values())
     
+    def _get_station_info(self, station_code):
+        """Get station information from stationcode.json."""
+        if station_code in self.station_codes:
+            return self.station_codes[station_code]
+        return None
+
     def get_trains_between_stations(self, src_name, src_code, dst_name, dst_code, date):
         """Get all trains between stations with their predicted delays."""
         logger.info(f"Fetching trains between {src_name} and {dst_name}...")
+        
+        # Validate station codes
+        src_info = self._get_station_info(src_code)
+        dst_info = self._get_station_info(dst_code)
+        
+        if not src_info or not dst_info:
+            logger.warning(f"Invalid station code(s): src={src_code}, dst={dst_code}")
+            return None
         
         # Step 1: Get all trains between stations
         trains = scrape_trains_between(src_name, src_code, dst_name, dst_code, date)
@@ -178,39 +181,35 @@ class TrainPipeline:
             
         # Step 2: Process each train
         processed_trains = []
-        failed_trains = []
-        
         for train in trains:
-            # Add source and destination info
-            train['stations'] = [
-                {'code': src_code, 'name': src_name, 'is_source': True},
-                {'code': dst_code, 'name': dst_name, 'is_destination': True}
-            ]
-            
             try:
+                # Add source and destination info
+                train['stations'] = [
+                    {'code': src_code, 'name': src_name, 'is_source': True},
+                    {'code': dst_code, 'name': dst_name, 'is_destination': True}
+                ]
+                
                 result = self.process_train(train, date)
-                if result and 'predicted_delays' in result:
+                if result:
                     # Add source and destination delays to train info
-                    train['source_delay'] = max(0, float(result['predicted_delays'].get(src_code, 0)))
-                    train['destination_delay'] = float(result['predicted_delays'].get(dst_code, 0))
+                    delays = result.get('predicted_delays', {})
+                    train['source_delay'] = delays.get(src_code, "no data found")
+                    train['destination_delay'] = delays.get(dst_code, "no data found")
                     processed_trains.append(train)
-                else:
-                    # Add train to failed list with error message
-                    train['error'] = 'Failed to process train'
-                    failed_trains.append(train)
             except Exception as e:
-                logger.error(f"Error processing train {train['train_number']}: {str(e)}")
-                train['error'] = str(e)
-                failed_trains.append(train)
+                logger.error(f"Error processing train {train.get('train_number', 'unknown')}: {e}")
+                # Add train with "no data found" for delays
+                train['source_delay'] = "no data found"
+                train['destination_delay'] = "no data found"
+                processed_trains.append(train)
         
         # Step 3: Save results to two different files
-        if processed_trains or failed_trains:
-            # File 1: All train details with delays and errors
+        if processed_trains:
+            # File 1: All train details with delays
             output_file = self.output_dir / 'trains_between_stations.json'
-            all_trains = processed_trains + failed_trains
             with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(all_trains, f, indent=2, ensure_ascii=False, cls=NumpyEncoder)
-            logger.info(f"Saved {len(all_trains)} trains to {output_file}")
+                json.dump(processed_trains, f, indent=2, ensure_ascii=False, cls=NumpyEncoder)
+            logger.info(f"Saved {len(processed_trains)} trains to {output_file}")
             
             # File 2: Simplified version with just essential info and delays
             simplified_trains = []
@@ -231,96 +230,99 @@ class TrainPipeline:
                 }
                 simplified_trains.append(simplified)
             
-            # Add failed trains with error messages
-            for train in failed_trains:
-                simplified = {
-                    'train_number': train['train_number'],
-                    'train_name': train['train_name'],
-                    'source': train['source'],
-                    'departure_time': train['departure_time'],
-                    'destination': train['destination'],
-                    'arrival_time': train['arrival_time'],
-                    'duration': train['duration'],
-                    'error': train.get('error', 'Unknown error'),
-                    'running_days': train['running_days'],
-                    'booking_classes': train['booking_classes'],
-                    'has_pantry': train['has_pantry']
-                }
-                simplified_trains.append(simplified)
-            
             simplified_file = self.output_dir / 'trains_with_delays.json'
             with open(simplified_file, 'w', encoding='utf-8') as f:
                 json.dump(simplified_trains, f, indent=2, ensure_ascii=False, cls=NumpyEncoder)
             logger.info(f"Saved simplified train data with delays to {simplified_file}")
         
-        return processed_trains + failed_trains
+        return processed_trains
     
     def get_train_schedule(self, train_name, train_number, date):
         """Get complete train schedule with predicted delays."""
         logger.info(f"Fetching schedule for {train_name} ({train_number})...")
         
-        # Step 1: Get train schedule
-        url = f"https://etrain.info/train/{train_name.replace(' ', '-')}-{train_number}/schedule"
-        schedule_data = scrape_train_schedule(url)
-        
-        if not schedule_data:
-            logger.error(f"Failed to get schedule for train {train_number}")
-            return None
+        try:
+            # Step 1: Get train schedule
+            url = f"https://etrain.info/train/{train_name.replace(' ', '-')}-{train_number}/schedule"
+            schedule_data = scrape_train_schedule(url)
             
-        # Set source and destination flags in schedule
-        if schedule_data['schedule']:
-            schedule_data['schedule'][0]['is_source'] = True
-            schedule_data['schedule'][-1]['is_destination'] = True
+            if not schedule_data:
+                logger.error(f"Failed to get schedule for train {train_number}")
+                return None
+                
+            # Set source and destination flags in schedule
+            if schedule_data['schedule']:
+                schedule_data['schedule'][0]['is_source'] = True
+                schedule_data['schedule'][-1]['is_destination'] = True
+                
+            # Step 2: Process train (get history, train model, predict delays)
+            train_info = {
+                'train_number': train_number,
+                'train_name': train_name,
+                'stations': []  # Initialize stations list
+            }
             
-        # Step 2: Process train (get history, train model, predict delays)
-        train_info = {
-            'train_number': train_number,
-            'train_name': train_name,
-            'stations': []  # Initialize stations list
-        }
-        
-        # Add all stations from schedule to train_info using their codes
-        for station in schedule_data['schedule']:
-            if 'station_code' in station:  # Use the code directly from schedule
-                train_info['stations'].append({
-                    'code': station['station_code'],
-                    'name': station['name'],
-                    'is_source': station.get('is_source', False),
-                    'is_destination': station.get('is_destination', False)
-                })
-                logger.info(f"Added station to train_info: {station['name']} (code: {station['station_code']})")
-        
-        result = self.process_train(train_info, date)
-        if not result or 'predicted_delays' not in result:
-            logger.error(f"Failed to process train {train_number}")
-            return None
+            # Add all stations from schedule to train_info using their codes
+            for station in schedule_data['schedule']:
+                if 'station_code' in station:  # Use the code directly from schedule
+                    station_code = station['station_code']
+                    station_info = self._get_station_info(station_code)
+                    
+                    if station_info:
+                        train_info['stations'].append({
+                            'code': station_code,
+                            'name': station_info['stnName'],
+                            'is_source': station.get('is_source', False),
+                            'is_destination': station.get('is_destination', False)
+                        })
+                        logger.info(f"Added station to train_info: {station_info['stnName']} (code: {station_code})")
+                    else:
+                        logger.warning(f"Unknown station code: {station_code}")
+                        train_info['stations'].append({
+                            'code': station_code,
+                            'name': station['name'],
+                            'is_source': station.get('is_source', False),
+                            'is_destination': station.get('is_destination', False)
+                        })
             
-        # Step 3: Add predicted delays to schedule
-        delays = result['predicted_delays']
-        logger.info("\nPredicted delays from model:")
-        for station, delay in delays.items():
-            logger.info(f"{station}: {delay:.2f} minutes")
+            result = self.process_train(train_info, date)
+            if not result:
+                # If processing fails, set all delays to "no data found"
+                for station in schedule_data['schedule']:
+                    station['predicted_delay'] = "no data found"
+                return schedule_data
+                
+            # Step 3: Add predicted delays to schedule
+            delays = result.get('predicted_delays', {})
+            logger.info("\nPredicted delays from model:")
+            for station, delay in delays.items():
+                logger.info(f"{station}: {delay}")
+                
+            for station in schedule_data['schedule']:
+                if 'station_code' in station:
+                    # Get delay using station code directly from schedule
+                    delay = delays.get(station['station_code'], "no data found")
+                    station['predicted_delay'] = delay
+                    logger.info(f"Added delay for {station['name']} (code: {station['station_code']}): {delay}")
+                else:
+                    logger.warning(f"No station code found for {station['name']}")
+                    station['predicted_delay'] = "no data found"
             
-        for station in schedule_data['schedule']:
-            if 'station_code' in station:
-                # Get delay using station code directly from schedule
-                delay = delays.get(station['station_code'], 0)
-                # Ensure source station has no negative delay
-                if station.get('is_source', False) and delay < 0:
-                    delay = 0
-                station['predicted_delay'] = float(delay)
-                logger.info(f"Added delay for {station['name']} (code: {station['station_code']}): {delay:.2f} minutes")
-            else:
-                logger.warning(f"No station code found for {station['name']}")
-                station['predicted_delay'] = 0.0
-        
-        # Step 4: Save results
-        output_file = self.output_dir / 'train_schedule_with_delays.json'
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(schedule_data, f, indent=2, ensure_ascii=False, cls=NumpyEncoder)
-        logger.info(f"Saved schedule with delays to {output_file}")
-        
-        return schedule_data
+            # Step 4: Save results
+            output_file = self.output_dir / 'train_schedule_with_delays.json'
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(schedule_data, f, indent=2, ensure_ascii=False, cls=NumpyEncoder)
+            logger.info(f"Saved schedule with delays to {output_file}")
+            
+            return schedule_data
+            
+        except Exception as e:
+            logger.error(f"Error getting train schedule: {e}")
+            # Return schedule with "no data found" for all stations
+            if schedule_data and 'schedule' in schedule_data:
+                for station in schedule_data['schedule']:
+                    station['predicted_delay'] = "no data found"
+            return schedule_data
 
 def main():
     pipeline = TrainPipeline()

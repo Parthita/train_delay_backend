@@ -171,7 +171,7 @@ class TrainPipeline:
                 return self._create_empty_response(train_info)
             
             # Wait for CSV file to exist
-            if not self._wait_for_file(csv_file, timeout=3600):  # Increased timeout
+            if not self._wait_for_file(csv_file, timeout=5):  # Reduced timeout
                 logger.error(f"No delay history found for train {train_number}")
                 return self._create_empty_response(train_info)
             
@@ -189,7 +189,7 @@ class TrainPipeline:
                 return self._create_empty_response(train_info)
             
             # Wait for model files to be saved
-            if not all(self._wait_for_file(path, timeout=3600) for path in model_paths.values()):  # Increased timeout
+            if not all(self._wait_for_file(path, timeout=5) for path in model_paths.values()):  # Reduced timeout
                 logger.error(f"Model files not found for train {train_number}")
                 return self._create_empty_response(train_info)
             
@@ -246,13 +246,63 @@ class TrainPipeline:
             logger.warning("No trains found between stations")
             return None
             
-        # Step 2: Process trains using queue system
-        from train_queue import TrainQueue
-        train_queue = TrainQueue(self.output_dir, self.process_train)
-        train_queue.add_trains(trains, src_code, dst_code, date)
+        # Step 2: Process each train
+        processed_trains = []
+        for train in trains:
+            try:
+                # Add source and destination info
+                train['stations'] = [
+                    {'code': src_code, 'name': src_name, 'is_source': True},
+                    {'code': dst_code, 'name': dst_name, 'is_destination': True}
+                ]
+                
+                result = self.process_train(train, date)
+                if result:
+                    # Add source and destination delays to train info
+                    delays = result.get('predicted_delays', {})
+                    train['source_delay'] = delays.get(src_code, "no data found")
+                    train['destination_delay'] = delays.get(dst_code, "no data found")
+                    processed_trains.append(train)
+            except Exception as e:
+                logger.error(f"Error processing train {train.get('train_number', 'unknown')}: {e}")
+                # Add train with "no data found" for delays
+                train['source_delay'] = "no data found"
+                train['destination_delay'] = "no data found"
+                processed_trains.append(train)
         
-        # Return initial results immediately
-        return train_queue.get_results()
+        # Step 3: Save results to two different files
+        if processed_trains:
+            # File 1: All train details with delays
+            output_file = self.output_dir / 'trains_between_stations.json'
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(processed_trains, f, indent=2, ensure_ascii=False, cls=NumpyEncoder)
+            logger.info(f"Saved {len(processed_trains)} trains to {output_file}")
+            
+            # File 2: Simplified version with just essential info and delays
+            simplified_trains = []
+            for train in processed_trains:
+                simplified = {
+                    'train_number': train['train_number'],
+                    'train_name': train['train_name'],
+                    'source': train['source'],
+                    'departure_time': train['departure_time'],
+                    'destination': train['destination'],
+                    'arrival_time': train['arrival_time'],
+                    'duration': train['duration'],
+                    'source_delay': train['source_delay'],
+                    'destination_delay': train['destination_delay'],
+                    'running_days': train['running_days'],
+                    'booking_classes': train['booking_classes'],
+                    'has_pantry': train['has_pantry']
+                }
+                simplified_trains.append(simplified)
+            
+            simplified_file = self.output_dir / 'trains_with_delays.json'
+            with open(simplified_file, 'w', encoding='utf-8') as f:
+                json.dump(simplified_trains, f, indent=2, ensure_ascii=False, cls=NumpyEncoder)
+            logger.info(f"Saved simplified train data with delays to {simplified_file}")
+        
+        return processed_trains
     
     def get_train_schedule(self, train_name, train_number, date):
         """Get complete train schedule with predicted delays."""

@@ -21,7 +21,7 @@ app = Flask(__name__)
 pipeline = TrainPipeline()
 
 # Global timeout value in seconds
-REQUEST_TIMEOUT = 3600  # 1 hour
+REQUEST_TIMEOUT = 300  # 5 minutes
 
 class TimeoutError(Exception):
     pass
@@ -128,7 +128,6 @@ def get_trains_between():
         return jsonify({
             'status': 'success',
             'data': trains,
-            'message': 'Processing started. Results will be saved to files.',
             'request_id': g.request_id
         })
         

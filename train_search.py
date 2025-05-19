@@ -18,7 +18,7 @@ def search_trains(source_station: str, dest_station: str, date: str):
     url = f"https://etrain.info/trains/{source_station}-to-{dest_station}?date={date}"
     
     try:
-        response = requests.get(url, headers=HEADERS, timeout=3600)
+        response = requests.get(url, headers=HEADERS)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -63,7 +63,7 @@ def get_train_schedule(train_name: str, train_number: str):
     url = f"https://etrain.info/train/{train_name.replace(' ', '-')}-{train_number}/schedule"
     
     try:
-        response = requests.get(url, headers=HEADERS, timeout=3600)
+        response = requests.get(url, headers=HEADERS)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.text, 'html.parser')

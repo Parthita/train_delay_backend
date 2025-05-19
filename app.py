@@ -3,6 +3,9 @@ from train_pipeline import TrainPipeline
 import logging
 from datetime import datetime
 import os
+import signal
+from functools import wraps
+import time
 
 # Set up logging
 logging.basicConfig(
@@ -14,7 +17,27 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 pipeline = TrainPipeline()
 
+def timeout_handler(signum, frame):
+    raise TimeoutError("Request timed out")
+
+def timeout(seconds):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Set the signal handler and a timeout
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(seconds)
+            try:
+                result = func(*args, **kwargs)
+            finally:
+                # Disable the alarm
+                signal.alarm(0)
+            return result
+        return wrapper
+    return decorator
+
 @app.route('/api/trains-between', methods=['GET'])
+@timeout(300)  # 5 minute timeout
 def get_trains_between():
     try:
         # Get parameters from query string
@@ -54,11 +77,15 @@ def get_trains_between():
             'data': trains
         })
         
+    except TimeoutError:
+        logger.error("Request timed out")
+        return jsonify({'error': 'Request timed out. Please try again.'}), 504
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/train-schedule', methods=['GET'])
+@timeout(300)  # 5 minute timeout
 def get_train_schedule():
     try:
         # Get parameters from query string
@@ -92,6 +119,9 @@ def get_train_schedule():
             'data': schedule
         })
         
+    except TimeoutError:
+        logger.error("Request timed out")
+        return jsonify({'error': 'Request timed out. Please try again.'}), 504
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
         return jsonify({'error': str(e)}), 500

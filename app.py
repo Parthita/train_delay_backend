@@ -128,6 +128,7 @@ def get_trains_between():
         return jsonify({
             'status': 'success',
             'data': trains,
+            'message': 'Processing started. Results will be saved to files.',
             'request_id': g.request_id
         })
         

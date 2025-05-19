@@ -130,16 +130,30 @@ class TrainPipeline:
         model_paths = self._get_model_paths(train_number)
         
         try:
-            # Step 1: Get delay history
+            # Step 1: Get delay history with timeout
             logger.info(f"Downloading HTML for {train_name} ({train_number})...")
-            html_file = download_html(train_name, train_number)
-            if not html_file:
-                logger.error(f"Failed to download HTML for train {train_number}")
+            try:
+                html_file = download_html(train_name, train_number)
+                if not html_file:
+                    logger.error(f"Failed to download HTML for train {train_number}")
+                    return None
+            except TimeoutError:
+                logger.error(f"Timeout while downloading HTML for train {train_number}")
+                return None
+            except Exception as e:
+                logger.error(f"Error downloading HTML for train {train_number}: {e}")
                 return None
                 
-            # Step 2: Extract delay data
+            # Step 2: Extract delay data with timeout
             logger.info(f"Extracting delay data from HTML...")
-            extract_delay_data_from_html(html_file, train_number)
+            try:
+                extract_delay_data_from_html(html_file, train_number)
+            except TimeoutError:
+                logger.error(f"Timeout while extracting delay data for train {train_number}")
+                return None
+            except Exception as e:
+                logger.error(f"Error extracting delay data for train {train_number}: {e}")
+                return None
             
             # Wait for CSV file to exist
             if not self._wait_for_file(csv_file):

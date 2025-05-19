@@ -4,6 +4,10 @@ import joblib
 import os
 from pathlib import Path
 import logging
+from sklearn.preprocessing import LabelEncoder
+import signal
+from functools import wraps
+import time
 
 # Set up logging
 logging.basicConfig(
@@ -11,6 +15,25 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+def timeout_handler(signum, frame):
+    raise TimeoutError("Operation timed out")
+
+def timeout(seconds):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Set the signal handler and a timeout
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(seconds)
+            try:
+                result = func(*args, **kwargs)
+            finally:
+                # Disable the alarm
+                signal.alarm(0)
+            return result
+        return wrapper
+    return decorator
 
 def predict_delays(train_number, target_date):
     """Predict delays for a train on a given date."""
@@ -70,9 +93,20 @@ def predict_delays(train_number, target_date):
         predict_df["day_sin"] = np.sin(2 * np.pi * predict_df["day"] / 31)
         predict_df["day_cos"] = np.cos(2 * np.pi * predict_df["day"] / 31)
 
-        # Encode stations
+        # Encode stations with handling for unseen stations
         logger.info("Encoding stations")
-        predict_df["station_encoded"] = encoder.transform(predict_df["station"])
+        try:
+            predict_df["station_encoded"] = encoder.transform(predict_df["station"])
+        except ValueError as e:
+            if "unseen labels" in str(e):
+                logger.warning("Found stations not in training data, using fallback encoding")
+                # Create a new encoder for unseen stations
+                new_encoder = LabelEncoder()
+                new_encoder.fit(history["station"])
+                # Transform using the new encoder
+                predict_df["station_encoded"] = new_encoder.transform(predict_df["station"])
+            else:
+                raise
     except Exception as e:
         logger.error(f"Error preparing features: {e}")
         return {station: "no data found" for station in stations}

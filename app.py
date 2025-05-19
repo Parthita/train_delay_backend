@@ -33,7 +33,7 @@ def load_station_codes():
                 with open(path, 'r') as f:
                     return json.load(f)
         
-        logger.warning("Station codes file not found in any location, using empty dictionary")
+        logger.warning("Station codes file not found, using empty dictionary")
         return {}
     except Exception as e:
         logger.error(f"Error loading station codes: {e}")
@@ -104,22 +104,6 @@ def get_trains_between():
                 'details': 'Date should be in YYYYMMDD format'
             }), 400
 
-        # Load station codes for validation
-        station_codes = load_station_codes()
-        
-        # Check if stations exist in our database (if we have station codes)
-        if station_codes:
-            if source_code not in station_codes:
-                return jsonify({
-                    'error': 'Unknown source station',
-                    'details': f'Station code {source_code} not found in database'
-                }), 404
-            if destination_code not in station_codes:
-                return jsonify({
-                    'error': 'Unknown destination station',
-                    'details': f'Station code {destination_code} not found in database'
-                }), 404
-        
         # Get trains between stations
         try:
             trains = pipeline.get_trains_between_stations(
@@ -131,11 +115,38 @@ def get_trains_between():
             )
         except ValueError as e:
             if "unseen labels" in str(e):
-                return jsonify({
-                    'error': 'Unknown station in route',
-                    'details': 'One or more stations in the route are not in our training data'
-                }), 400
-            raise
+                # Instead of returning error, try to get train schedule and use its stations
+                logger.info(f"Unknown station detected, attempting to use train's own station data")
+                try:
+                    # Get train schedule to get actual stations
+                    schedule = pipeline.get_train_schedule(
+                        trains[0]['train_name'] if trains else '',
+                        trains[0]['train_number'] if trains else '',
+                        date
+                    )
+                    if schedule and 'schedule' in schedule:
+                        # Update station information from schedule
+                        for train in trains:
+                            train['stations'] = [
+                                station for station in schedule['schedule']
+                                if station.get('station_code') in [source_code, destination_code]
+                            ]
+                        # Retry getting trains with updated station info
+                        trains = pipeline.get_trains_between_stations(
+                            source_name,
+                            source_code,
+                            destination_name,
+                            destination_code,
+                            date
+                        )
+                except Exception as schedule_error:
+                    logger.error(f"Failed to get train schedule: {schedule_error}")
+                    return jsonify({
+                        'error': 'Unable to process stations',
+                        'details': 'Could not get train schedule to handle unknown stations'
+                    }), 500
+            else:
+                raise
         
         if not trains:
             return jsonify({

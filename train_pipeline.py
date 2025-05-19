@@ -43,15 +43,53 @@ class TrainPipeline:
         
         # Load station codes
         self.station_codes = {}
-        try:
-            with open(self.output_dir / 'stationcode.json', 'r') as f:
-                station_data = json.load(f)
-                # Convert to dictionary with stnCode as key
-                self.station_codes = {station['stnCode']: station for station in station_data.get('stations', [])}
-        except Exception as e:
-            logger.error(f"Failed to load station codes: {e}")
+        self._load_station_codes()
         
         logger.info(f"Initialized pipeline with output_dir: {self.output_dir}")
+        
+    def _load_station_codes(self):
+        """Load and validate station codes from JSON file."""
+        station_file = self.output_dir / 'stationcode.json'
+        
+        try:
+            if not station_file.exists():
+                logger.error(f"Station code file not found: {station_file}")
+                return
+                
+            with open(station_file, 'r', encoding='utf-8') as f:
+                try:
+                    station_data = json.load(f)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON in station code file: {e}")
+                    return
+                
+                if not isinstance(station_data, dict):
+                    logger.error("Station data must be a dictionary")
+                    return
+                    
+                stations = station_data.get('stations', [])
+                if not isinstance(stations, list):
+                    logger.error("Stations must be a list")
+                    return
+                
+                # Convert to dictionary with stnCode as key
+                for station in stations:
+                    if not isinstance(station, dict):
+                        logger.warning(f"Invalid station entry: {station}")
+                        continue
+                        
+                    stn_code = station.get('stnCode')
+                    if not stn_code:
+                        logger.warning(f"Station missing code: {station}")
+                        continue
+                        
+                    self.station_codes[stn_code] = station
+                
+                logger.info(f"Successfully loaded {len(self.station_codes)} station codes")
+                
+        except Exception as e:
+            logger.error(f"Failed to load station codes: {e}")
+            # Don't raise the exception, just log it and continue with empty station codes
         
     def _get_model_paths(self, train_number):
         """Get model file paths for a specific train."""
@@ -157,8 +195,14 @@ class TrainPipeline:
     
     def _get_station_info(self, station_code):
         """Get station information from stationcode.json."""
+        if not station_code:
+            logger.warning("Empty station code provided")
+            return None
+            
         if station_code in self.station_codes:
             return self.station_codes[station_code]
+            
+        logger.warning(f"Unknown station code: {station_code}")
         return None
 
     def get_trains_between_stations(self, src_name, src_code, dst_name, dst_code, date):

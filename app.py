@@ -35,14 +35,10 @@ def get_trains_between():
         
         for field, value in required_fields.items():
             if not value:
-                return jsonify({
-                    'status': 'error',
-                    'message': f'Missing required field: {field}',
-                    'data': None
-                }), 400
+                return jsonify({'error': f'Missing required field: {field}'}), 400
         
         # Get trains between stations
-        result = pipeline.get_trains_between_stations(
+        trains = pipeline.get_trains_between_stations(
             source_name,
             source_code,
             destination_name,
@@ -50,29 +46,17 @@ def get_trains_between():
             date
         )
         
-        # Handle different response statuses
-        if result['status'] == 'no_trains':
-            return jsonify({
-                'status': 'success',
-                'message': 'No trains found between stations',
-                'data': []
-            })
-        elif result['status'] == 'error':
-            return jsonify({
-                'status': 'error',
-                'message': result['message'],
-                'data': None
-            }), 500
-        else:
-            return jsonify(result)
+        if not trains:
+            return jsonify({'error': 'No trains found between stations'}), 404
             
+        return jsonify({
+            'status': 'success',
+            'data': trains
+        })
+        
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
-        return jsonify({
-            'status': 'error',
-            'message': str(e),
-            'data': None
-        }), 500
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/train-schedule', methods=['GET'])
 def get_train_schedule():
@@ -91,52 +75,30 @@ def get_train_schedule():
         
         for field, value in required_fields.items():
             if not value:
-                return jsonify({
-                    'status': 'error',
-                    'message': f'Missing required field: {field}',
-                    'data': None
-                }), 400
+                return jsonify({'error': f'Missing required field: {field}'}), 400
         
         # Get train schedule with delays
-        result = pipeline.get_train_schedule(
+        schedule = pipeline.get_train_schedule(
             train_name,
             train_number,
             date
         )
         
-        # Handle different response statuses
-        if result['status'] == 'no_schedule':
-            return jsonify({
-                'status': 'success',
-                'message': 'No schedule found for the train',
-                'data': None
-            })
-        elif result['status'] == 'error':
-            return jsonify({
-                'status': 'error',
-                'message': result['message'],
-                'data': None
-            }), 500
-        else:
-            return jsonify(result)
+        if not schedule:
+            return jsonify({'error': 'Failed to get train schedule'}), 404
             
+        return jsonify({
+            'status': 'success',
+            'data': schedule
+        })
+        
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
-        return jsonify({
-            'status': 'error',
-            'message': str(e),
-            'data': None
-        }), 500
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    return jsonify({
-        'status': 'success',
-        'message': 'Service is healthy',
-        'data': {
-            'timestamp': datetime.utcnow().isoformat()
-        }
-    })
+    return jsonify({'status': 'healthy'})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

@@ -39,17 +39,8 @@ def predict_delays(train_number, target_date):
     predict_df["day_sin"] = np.sin(2 * np.pi * predict_df["day"] / 31)
     predict_df["day_cos"] = np.cos(2 * np.pi * predict_df["day"] / 31)
 
-    # Encode stations with unknown handling
-    try:
-        predict_df["station_encoded"] = encoder.transform(predict_df["station"])
-    except ValueError as e:
-        if "unseen labels" in str(e):
-            # For unseen stations, use the most common station code
-            default_code = encoder.transform([encoder.classes_[0]])[0]
-            predict_df["station_encoded"] = default_code
-            print(f"Warning: Using default station code {default_code} for unseen stations")
-        else:
-            raise e
+    # Encode stations
+    predict_df["station_encoded"] = encoder.transform(predict_df["station"])
 
     # To get lag features, merge with history delays for past days for each station
     history_sorted = history.sort_values(["station", "date"])

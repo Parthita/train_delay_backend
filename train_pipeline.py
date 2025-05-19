@@ -246,61 +246,93 @@ class TrainPipeline:
             logger.warning("No trains found between stations")
             return None
             
-        # Step 2: Process each train
+        # Step 2: Process trains in batches
         processed_trains = []
-        for train in trains:
-            try:
-                # Add source and destination info
-                train['stations'] = [
-                    {'code': src_code, 'name': src_name, 'is_source': True},
-                    {'code': dst_code, 'name': dst_name, 'is_destination': True}
-                ]
-                
-                result = self.process_train(train, date)
-                if result:
-                    # Add source and destination delays to train info
-                    delays = result.get('predicted_delays', {})
-                    train['source_delay'] = delays.get(src_code, "no data found")
-                    train['destination_delay'] = delays.get(dst_code, "no data found")
-                    processed_trains.append(train)
-            except Exception as e:
-                logger.error(f"Error processing train {train.get('train_number', 'unknown')}: {e}")
-                # Add train with "no data found" for delays
-                train['source_delay'] = "no data found"
-                train['destination_delay'] = "no data found"
-                processed_trains.append(train)
+        batch_size = 5  # Process 5 trains at a time
+        total_trains = len(trains)
         
-        # Step 3: Save results to two different files
-        if processed_trains:
-            # File 1: All train details with delays
-            output_file = self.output_dir / 'trains_between_stations.json'
-            with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(processed_trains, f, indent=2, ensure_ascii=False, cls=NumpyEncoder)
-            logger.info(f"Saved {len(processed_trains)} trains to {output_file}")
+        for i in range(0, total_trains, batch_size):
+            batch = trains[i:i + batch_size]
+            logger.info(f"Processing batch {i//batch_size + 1} of {(total_trains + batch_size - 1)//batch_size}")
             
-            # File 2: Simplified version with just essential info and delays
-            simplified_trains = []
-            for train in processed_trains:
-                simplified = {
-                    'train_number': train['train_number'],
-                    'train_name': train['train_name'],
-                    'source': train['source'],
-                    'departure_time': train['departure_time'],
-                    'destination': train['destination'],
-                    'arrival_time': train['arrival_time'],
-                    'duration': train['duration'],
-                    'source_delay': train['source_delay'],
-                    'destination_delay': train['destination_delay'],
-                    'running_days': train['running_days'],
-                    'booking_classes': train['booking_classes'],
-                    'has_pantry': train['has_pantry']
-                }
-                simplified_trains.append(simplified)
+            for train in batch:
+                try:
+                    # Add source and destination info
+                    train['stations'] = [
+                        {'code': src_code, 'name': src_name, 'is_source': True},
+                        {'code': dst_code, 'name': dst_name, 'is_destination': True}
+                    ]
+                    
+                    # Process train with retry mechanism
+                    max_retries = 3
+                    retry_count = 0
+                    while retry_count < max_retries:
+                        try:
+                            result = self.process_train(train, date)
+                            if result:
+                                # Add source and destination delays to train info
+                                delays = result.get('predicted_delays', {})
+                                train['source_delay'] = delays.get(src_code, "no data found")
+                                train['destination_delay'] = delays.get(dst_code, "no data found")
+                                processed_trains.append(train)
+                                break
+                            else:
+                                raise Exception("Process train returned None")
+                        except Exception as e:
+                            retry_count += 1
+                            if retry_count == max_retries:
+                                logger.error(f"Failed to process train {train.get('train_number', 'unknown')} after {max_retries} attempts: {e}")
+                                # Add train with "no data found" for delays
+                                train['source_delay'] = "no data found"
+                                train['destination_delay'] = "no data found"
+                                processed_trains.append(train)
+                            else:
+                                logger.warning(f"Retry {retry_count} for train {train.get('train_number', 'unknown')}: {e}")
+                                time.sleep(2)  # Wait before retry
+                except Exception as e:
+                    logger.error(f"Error processing train {train.get('train_number', 'unknown')}: {e}")
+                    # Add train with "no data found" for delays
+                    train['source_delay'] = "no data found"
+                    train['destination_delay'] = "no data found"
+                    processed_trains.append(train)
             
-            simplified_file = self.output_dir / 'trains_with_delays.json'
-            with open(simplified_file, 'w', encoding='utf-8') as f:
-                json.dump(simplified_trains, f, indent=2, ensure_ascii=False, cls=NumpyEncoder)
-            logger.info(f"Saved simplified train data with delays to {simplified_file}")
+            # Save intermediate results after each batch
+            if processed_trains:
+                try:
+                    # File 1: All train details with delays
+                    output_file = self.output_dir / 'trains_between_stations.json'
+                    with open(output_file, 'w', encoding='utf-8') as f:
+                        json.dump(processed_trains, f, indent=2, ensure_ascii=False, cls=NumpyEncoder)
+                    logger.info(f"Saved {len(processed_trains)} trains to {output_file}")
+                    
+                    # File 2: Simplified version with just essential info and delays
+                    simplified_trains = []
+                    for train in processed_trains:
+                        simplified = {
+                            'train_number': train['train_number'],
+                            'train_name': train['train_name'],
+                            'source': train['source'],
+                            'departure_time': train['departure_time'],
+                            'destination': train['destination'],
+                            'arrival_time': train['arrival_time'],
+                            'duration': train['duration'],
+                            'source_delay': train['source_delay'],
+                            'destination_delay': train['destination_delay'],
+                            'running_days': train['running_days'],
+                            'booking_classes': train['booking_classes'],
+                            'has_pantry': train['has_pantry']
+                        }
+                        simplified_trains.append(simplified)
+                    
+                    simplified_file = self.output_dir / 'trains_with_delays.json'
+                    with open(simplified_file, 'w', encoding='utf-8') as f:
+                        json.dump(simplified_trains, f, indent=2, ensure_ascii=False, cls=NumpyEncoder)
+                    logger.info(f"Saved simplified train data with delays to {simplified_file}")
+                except Exception as e:
+                    logger.error(f"Error saving intermediate results: {e}")
+            
+            # Add a small delay between batches to prevent overwhelming the system
+            time.sleep(1)
         
         return processed_trains
     

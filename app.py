@@ -3,6 +3,7 @@ from train_pipeline import TrainPipeline
 import logging
 from datetime import datetime
 import os
+import re
 
 # Set up logging
 logging.basicConfig(
@@ -13,6 +14,13 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 pipeline = TrainPipeline()
+
+def validate_station_code(code):
+    """Validate station code format."""
+    if not code or not isinstance(code, str):
+        return False
+    # Station codes are typically 3-4 characters, alphanumeric
+    return bool(re.match(r'^[A-Z0-9]{3,4}$', code.upper()))
 
 @app.route('/api/trains-between', methods=['GET'])
 def get_trains_between():
@@ -37,6 +45,28 @@ def get_trains_between():
             if not value:
                 return jsonify({'error': f'Missing required field: {field}'}), 400
         
+        # Validate station codes format
+        if not validate_station_code(source_code):
+            return jsonify({
+                'error': 'Invalid source station code format',
+                'details': 'Station code should be 3-4 alphanumeric characters'
+            }), 400
+            
+        if not validate_station_code(destination_code):
+            return jsonify({
+                'error': 'Invalid destination station code format',
+                'details': 'Station code should be 3-4 alphanumeric characters'
+            }), 400
+        
+        # Validate date format (YYYYMMDD)
+        try:
+            datetime.strptime(date, '%Y%m%d')
+        except ValueError:
+            return jsonify({
+                'error': 'Invalid date format',
+                'details': 'Date should be in YYYYMMDD format'
+            }), 400
+        
         # Get trains between stations
         trains = pipeline.get_trains_between_stations(
             source_name,
@@ -47,7 +77,10 @@ def get_trains_between():
         )
         
         if not trains:
-            return jsonify({'error': 'No trains found between stations'}), 404
+            return jsonify({
+                'error': 'No trains found between stations',
+                'details': 'The stations may be invalid or there are no trains running between them on the specified date'
+            }), 404
             
         return jsonify({
             'status': 'success',
@@ -56,7 +89,10 @@ def get_trains_between():
         
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'error': 'Internal server error',
+            'details': str(e)
+        }), 500
 
 @app.route('/api/train-schedule', methods=['GET'])
 def get_train_schedule():

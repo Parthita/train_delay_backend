@@ -21,7 +21,7 @@ app = Flask(__name__)
 pipeline = TrainPipeline()
 
 # Global timeout value in seconds
-REQUEST_TIMEOUT = 300  # 5 minutes
+REQUEST_TIMEOUT = 600  # 10 minutes
 
 class TimeoutError(Exception):
     pass
@@ -47,9 +47,8 @@ def timeout(seconds):
 
 @app.before_request
 def before_request():
-    # Generate a unique request ID
-    g.request_id = str(uuid.uuid4())
     g.start_time = time.time()
+    g.request_id = str(uuid.uuid4())
     logger.info(f"Request started - ID: {g.request_id}")
 
 @app.after_request
@@ -65,7 +64,7 @@ def handle_timeout(e):
     return jsonify({
         'status': 'error',
         'code': 504,
-        'message': 'Request timed out. Please try again.',
+        'message': 'Request is taking longer than expected. Please try again.',
         'request_id': g.request_id
     }), 504
 
@@ -75,7 +74,7 @@ def handle_error(e):
     return jsonify({
         'status': 'error',
         'code': 500,
-        'message': str(e),
+        'message': 'An unexpected error occurred. Please try again.',
         'request_id': g.request_id
     }), 500
 

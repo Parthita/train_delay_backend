@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 pipeline = TrainPipeline()
 
-# Global timeout value in seconds
-REQUEST_TIMEOUT = 300  # 5 minutes
+# Remove global timeout
+# REQUEST_TIMEOUT = 300  # 5 minutes
 
 class TimeoutError(Exception):
     pass
@@ -64,7 +64,7 @@ def handle_timeout(e):
     return jsonify({
         'status': 'error',
         'code': 504,
-        'message': 'Request timed out. Please try again.',
+        'message': 'Request is taking longer than expected. Please wait...',
         'request_id': g.request_id
     }), 504
 
@@ -79,7 +79,7 @@ def handle_error(e):
     }), 500
 
 @app.route('/api/trains-between', methods=['GET'])
-@timeout(REQUEST_TIMEOUT)
+# Remove timeout decorator
 def get_trains_between():
     try:
         # Get parameters from query string
@@ -130,14 +130,6 @@ def get_trains_between():
             'request_id': g.request_id
         })
         
-    except TimeoutError:
-        logger.error(f"Request timed out - ID: {g.request_id}")
-        return jsonify({
-            'status': 'error',
-            'code': 504,
-            'message': 'Request timed out. Please try again.',
-            'request_id': g.request_id
-        }), 504
     except Exception as e:
         logger.error(f"Error processing request - ID: {g.request_id}: {str(e)}")
         return jsonify({
@@ -148,7 +140,7 @@ def get_trains_between():
         }), 500
 
 @app.route('/api/train-schedule', methods=['GET'])
-@timeout(REQUEST_TIMEOUT)
+# Remove timeout decorator
 def get_train_schedule():
     try:
         # Get parameters from query string
@@ -193,14 +185,6 @@ def get_train_schedule():
             'request_id': g.request_id
         })
         
-    except TimeoutError:
-        logger.error(f"Request timed out - ID: {g.request_id}")
-        return jsonify({
-            'status': 'error',
-            'code': 504,
-            'message': 'Request timed out. Please try again.',
-            'request_id': g.request_id
-        }), 504
     except Exception as e:
         logger.error(f"Error processing request - ID: {g.request_id}: {str(e)}")
         return jsonify({
@@ -219,6 +203,6 @@ def health_check():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    # Set timeout for the server
-    app.config['TIMEOUT'] = REQUEST_TIMEOUT
+    # Remove timeout config
+    # app.config['TIMEOUT'] = REQUEST_TIMEOUT
     app.run(host='0.0.0.0', port=port, threaded=True) 

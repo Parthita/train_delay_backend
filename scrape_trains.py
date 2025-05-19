@@ -108,7 +108,7 @@ def scrape_trains_between(src_name, src_code, dst_name, dst_code, date=None, out
         'Connection': 'keep-alive',
     }
     
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=3600)
     if response.status_code != 200:
         print(f"Failed to fetch page: {response.status_code}")
         return None

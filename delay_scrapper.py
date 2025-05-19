@@ -17,7 +17,7 @@ def download_html(train_name: str, train_number: str):
     }
     
     try:
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.get(url, headers=headers, timeout=3600)
         response.raise_for_status()  # Raise an exception for bad status codes
         
         if response.status_code == 200:

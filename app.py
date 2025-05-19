@@ -21,7 +21,7 @@ app = Flask(__name__)
 pipeline = TrainPipeline()
 
 # Global timeout value in seconds
-REQUEST_TIMEOUT = 36000  # 1 hour
+REQUEST_TIMEOUT = 3600  # 1 hour
 
 class TimeoutError(Exception):
     pass

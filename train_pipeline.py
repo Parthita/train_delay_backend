@@ -171,7 +171,7 @@ class TrainPipeline:
                 return self._create_empty_response(train_info)
             
             # Wait for CSV file to exist
-            if not self._wait_for_file(csv_file, timeout=5):  # Reduced timeout
+            if not self._wait_for_file(csv_file, timeout=3600):  # Increased timeout
                 logger.error(f"No delay history found for train {train_number}")
                 return self._create_empty_response(train_info)
             

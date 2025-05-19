@@ -119,31 +119,59 @@ class TrainPipeline:
         
     def process_train(self, train_info, date):
         """Process a single train: get history, train model, predict delays."""
-        train_name = train_info.get('train_name', '')
-        train_number = train_info.get('train_number', '')
-        csv_file = f"{train_number}.csv"
-        model_paths = {
-            'model': f"models/{train_number}_model.joblib",
-            'scaler': f"models/{train_number}_scaler.joblib",
-            'encoder': f"models/{train_number}_encoder.joblib"
-        }
+        train_number = train_info['train_number']
+        train_name = train_info['train_name']
+        
+        logger.info(f"Processing {train_name} ({train_number})...")
+        
+        # Initialize file paths
+        html_file = None
+        csv_file = Path(f"{train_number}.csv")
+        model_paths = self._get_model_paths(train_number)
+        
+        # Check if we already have a model and history
+        if all(path.exists() for path in model_paths.values()) and csv_file.exists():
+            logger.info(f"Using existing model and history for train {train_number}")
+            try:
+                # Step 4: Predict delays using existing model
+                logger.info(f"Predicting delays for train {train_number} on {date}...")
+                delays = predict_delays(train_number, date)
+                if delays:
+                    train_info['predicted_delays'] = delays
+                    return train_info
+            except Exception as e:
+                logger.error(f"Error using existing model for train {train_number}: {e}")
         
         try:
-            # Step 1: Get delay history
+            # Step 1: Get delay history with timeout
             logger.info(f"Downloading HTML for {train_name} ({train_number})...")
-            html_file = download_html(train_name, train_number)
-            if not html_file:
-                logger.error(f"Failed to download HTML for train {train_number}")
+            try:
+                html_file = download_html(train_name, train_number)
+                if not html_file:
+                    logger.error(f"Failed to download HTML for train {train_number}")
+                    return self._create_empty_response(train_info)
+            except TimeoutError:
+                logger.error(f"Timeout while downloading HTML for train {train_number}")
                 return self._create_empty_response(train_info)
-            
-            # Step 2: Extract delay data
+            except Exception as e:
+                logger.error(f"Error downloading HTML for train {train_number}: {e}")
+                return self._create_empty_response(train_info)
+                
+            # Step 2: Extract delay data with timeout
             logger.info(f"Extracting delay data from HTML...")
-            if not extract_delay_data_from_html(html_file, train_number):
-                logger.warning(f"No delay data found in HTML for train {train_number}")
+            try:
+                if not extract_delay_data_from_html(html_file, train_number):
+                    logger.warning(f"No delay data found in HTML for train {train_number}")
+                    return self._create_empty_response(train_info)
+            except TimeoutError:
+                logger.error(f"Timeout while extracting delay data for train {train_number}")
+                return self._create_empty_response(train_info)
+            except Exception as e:
+                logger.error(f"Error extracting delay data for train {train_number}: {e}")
                 return self._create_empty_response(train_info)
             
-            # Wait for CSV file to exist with longer timeout
-            if not self._wait_for_file(csv_file, timeout=60):  # Increased timeout to 60 seconds
+            # Wait for CSV file to exist
+            if not self._wait_for_file(csv_file, timeout=5):  # Reduced timeout
                 logger.error(f"No delay history found for train {train_number}")
                 return self._create_empty_response(train_info)
             
@@ -153,31 +181,23 @@ class TrainPipeline:
                 logger.warning(f"Not enough delay data for train {train_number} (only {len(df)} samples)")
                 return self._create_empty_response(train_info)
             
-            # Step 3: Train model with progress logging
+            # Step 3: Train model
             logger.info(f"Training model for train {train_number}...")
-            try:
-                model_result = train_model(train_number)
-                if not model_result:
-                    logger.warning(f"Could not train model for train {train_number}")
-                    return self._create_empty_response(train_info)
-            except Exception as e:
-                logger.error(f"Error during model training for train {train_number}: {e}")
+            model_result = train_model(train_number)
+            if not model_result:
+                logger.warning(f"Could not train model for train {train_number} - skipping")
                 return self._create_empty_response(train_info)
             
-            # Wait for model files to be saved with longer timeout
-            if not all(self._wait_for_file(path, timeout=60) for path in model_paths.values()):  # Increased timeout to 60 seconds
+            # Wait for model files to be saved
+            if not all(self._wait_for_file(path, timeout=5) for path in model_paths.values()):  # Reduced timeout
                 logger.error(f"Model files not found for train {train_number}")
                 return self._create_empty_response(train_info)
             
-            # Step 4: Predict delays with progress logging
+            # Step 4: Predict delays
             logger.info(f"Predicting delays for train {train_number} on {date}...")
-            try:
-                delays = predict_delays(train_number, date)
-                if not delays:
-                    logger.error(f"Failed to predict delays for train {train_number}")
-                    return self._create_empty_response(train_info)
-            except Exception as e:
-                logger.error(f"Error during delay prediction for train {train_number}: {e}")
+            delays = predict_delays(train_number, date)
+            if not delays:
+                logger.error(f"Failed to predict delays for train {train_number}")
                 return self._create_empty_response(train_info)
             
             # Debug logging for delays
@@ -192,6 +212,11 @@ class TrainPipeline:
         except Exception as e:
             logger.error(f"Error processing train {train_number}: {e}")
             return self._create_empty_response(train_info)
+        finally:
+            # Clean up temporary files
+            self._cleanup_files([html_file, csv_file])
+            # Don't delete model files until after prediction is done
+            self._cleanup_files(model_paths.values())
     
     def _create_empty_response(self, train_info):
         """Create a response with 'no data found' for all stations."""

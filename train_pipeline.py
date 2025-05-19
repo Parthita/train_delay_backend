@@ -12,7 +12,6 @@ from delay_scrapper import download_html, extract_delay_data_from_html
 from model import train_model
 from predict import predict_delays
 import pandas as pd
-from train_queue import TrainQueue
 
 # Set up logging
 logging.basicConfig(
@@ -248,7 +247,8 @@ class TrainPipeline:
             return None
             
         # Step 2: Process trains using queue system
-        train_queue = TrainQueue(self.output_dir)
+        from train_queue import TrainQueue
+        train_queue = TrainQueue(self.output_dir, self.process_train)
         train_queue.add_trains(trains, src_code, dst_code, date)
         
         # Return initial results immediately

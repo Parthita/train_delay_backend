@@ -189,7 +189,7 @@ class TrainPipeline:
                 return self._create_empty_response(train_info)
             
             # Wait for model files to be saved
-            if not all(self._wait_for_file(path, timeout=5) for path in model_paths.values()):  # Reduced timeout
+            if not all(self._wait_for_file(path, timeout=3600) for path in model_paths.values()):  # Increased timeout
                 logger.error(f"Model files not found for train {train_number}")
                 return self._create_empty_response(train_info)
             

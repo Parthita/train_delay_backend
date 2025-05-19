@@ -42,58 +42,12 @@ def search_trains(source_station: str, dest_station: str, date: str):
                 if train_number_match:
                     train_number = train_number_match.group()
                 
-                # Check for pantry availability
-                has_pantry = False
-                pantry_cell = row.find('td', {'class': 'pantry'})
-                if pantry_cell:
-                    # Look for pantry icon or text
-                    pantry_icon = pantry_cell.find('i', {'class': 'icon-food'})
-                    pantry_text = pantry_cell.text.strip().lower()
-                    has_pantry = bool(pantry_icon) or 'pantry' in pantry_text or 'food' in pantry_text
-                
-                # Get available classes
-                available_classes = []
-                class_cells = row.find_all('td', {'class': lambda x: x and 'class' in x.lower()})
-                for cell in class_cells:
-                    if 'available' in cell.get('class', []):
-                        class_name = cell.get('title', '').strip()
-                        if class_name:
-                            available_classes.append(class_name)
-                
-                train_info = {
+                trains.append({
                     'train_number': train_number,
                     'train_name': train_name,
                     'departure_time': departure,
-                    'arrival_time': arrival,
-                    'has_pantry': has_pantry,
-                    'available_classes': available_classes
-                }
-                
-                # Get additional train details
-                try:
-                    schedule_url = f"https://etrain.info/train/{train_name.replace(' ', '-')}-{train_number}/schedule"
-                    schedule_response = requests.get(schedule_url, headers=HEADERS)
-                    if schedule_response.status_code == 200:
-                        schedule_soup = BeautifulSoup(schedule_response.text, 'html.parser')
-                        
-                        # Check for pantry in schedule page
-                        pantry_info = schedule_soup.find('div', {'class': 'pantry-info'})
-                        if pantry_info:
-                            has_pantry = True
-                        
-                        # Get running days
-                        running_days = schedule_soup.find('div', {'class': 'running-days'})
-                        if running_days:
-                            train_info['running_days'] = running_days.text.strip()
-                        
-                        # Get train type
-                        train_type = schedule_soup.find('div', {'class': 'train-type'})
-                        if train_type:
-                            train_info['train_type'] = train_type.text.strip()
-                except Exception as e:
-                    print(f"Error getting additional details for train {train_number}: {e}")
-                
-                trains.append(train_info)
+                    'arrival_time': arrival
+                })
         
         return trains
         
@@ -127,19 +81,10 @@ def get_train_schedule(train_name: str, train_number: str):
                 arrival = cols[2].text.strip()
                 departure = cols[3].text.strip()
                 
-                # Check if station has pantry
-                has_pantry = False
-                pantry_cell = row.find('td', {'class': 'pantry'})
-                if pantry_cell:
-                    pantry_icon = pantry_cell.find('i', {'class': 'icon-food'})
-                    pantry_text = pantry_cell.text.strip().lower()
-                    has_pantry = bool(pantry_icon) or 'pantry' in pantry_text or 'food' in pantry_text
-                
                 schedule.append({
                     'station': station,
                     'arrival_time': arrival,
-                    'departure_time': departure,
-                    'has_pantry': has_pantry
+                    'departure_time': departure
                 })
         
         return schedule

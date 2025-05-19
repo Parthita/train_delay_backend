@@ -165,14 +165,6 @@ class TrainPipeline:
         """Get all trains between stations with their predicted delays."""
         logger.info(f"Fetching trains between {src_name} and {dst_name}...")
         
-        # Validate station codes
-        src_info = self._get_station_info(src_code)
-        dst_info = self._get_station_info(dst_code)
-        
-        if not src_info or not dst_info:
-            logger.warning(f"Invalid station code(s): src={src_code}, dst={dst_code}")
-            return None
-        
         # Step 1: Get all trains between stations
         trains = scrape_trains_between(src_name, src_code, dst_name, dst_code, date)
         if not trains:
@@ -265,25 +257,13 @@ class TrainPipeline:
             # Add all stations from schedule to train_info using their codes
             for station in schedule_data['schedule']:
                 if 'station_code' in station:  # Use the code directly from schedule
-                    station_code = station['station_code']
-                    station_info = self._get_station_info(station_code)
-                    
-                    if station_info:
-                        train_info['stations'].append({
-                            'code': station_code,
-                            'name': station_info['stnName'],
-                            'is_source': station.get('is_source', False),
-                            'is_destination': station.get('is_destination', False)
-                        })
-                        logger.info(f"Added station to train_info: {station_info['stnName']} (code: {station_code})")
-                    else:
-                        logger.warning(f"Unknown station code: {station_code}")
-                        train_info['stations'].append({
-                            'code': station_code,
-                            'name': station['name'],
-                            'is_source': station.get('is_source', False),
-                            'is_destination': station.get('is_destination', False)
-                        })
+                    train_info['stations'].append({
+                        'code': station['station_code'],
+                        'name': station['name'],
+                        'is_source': station.get('is_source', False),
+                        'is_destination': station.get('is_destination', False)
+                    })
+                    logger.info(f"Added station to train_info: {station['name']} (code: {station['station_code']})")
             
             result = self.process_train(train_info, date)
             if not result:

@@ -20,31 +20,6 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 pipeline = TrainPipeline()
 
-# Remove global timeout
-# REQUEST_TIMEOUT = 300  # 5 minutes
-
-class TimeoutError(Exception):
-    pass
-
-def timeout_handler(signum, frame):
-    raise TimeoutError("Request timed out")
-
-def timeout(seconds):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            # Set the signal handler and a timeout
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(seconds)
-            try:
-                result = func(*args, **kwargs)
-            finally:
-                # Disable the alarm
-                signal.alarm(0)
-            return result
-        return wrapper
-    return decorator
-
 @app.before_request
 def before_request():
     g.start_time = time.time()
@@ -58,16 +33,6 @@ def after_request(response):
     logger.info(f"Request completed - ID: {g.request_id} - Duration: {duration:.2f}s")
     return response
 
-@app.errorhandler(RequestTimeout)
-def handle_timeout(e):
-    logger.error(f"Request timed out - ID: {g.request_id}")
-    return jsonify({
-        'status': 'error',
-        'code': 504,
-        'message': 'Request is taking longer than expected. Please wait...',
-        'request_id': g.request_id
-    }), 504
-
 @app.errorhandler(Exception)
 def handle_error(e):
     logger.error(f"Error processing request - ID: {g.request_id}: {str(e)}")
@@ -79,7 +44,6 @@ def handle_error(e):
     }), 500
 
 @app.route('/api/trains-between', methods=['GET'])
-# Remove timeout decorator
 def get_trains_between():
     try:
         # Get parameters from query string
@@ -140,7 +104,6 @@ def get_trains_between():
         }), 500
 
 @app.route('/api/train-schedule', methods=['GET'])
-# Remove timeout decorator
 def get_train_schedule():
     try:
         # Get parameters from query string
@@ -203,6 +166,4 @@ def health_check():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    # Remove timeout config
-    # app.config['TIMEOUT'] = REQUEST_TIMEOUT
     app.run(host='0.0.0.0', port=port, threaded=True) 

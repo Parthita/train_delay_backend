@@ -158,4 +158,3 @@ if __name__ == "__main__":
     # If HTML file is downloaded successfully, extract delay data
     if html_file:
         extract_delay_data_from_html(html_file, train_number)
-        extract_delay_data_from_html(html_file, train_number)

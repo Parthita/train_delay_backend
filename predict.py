@@ -3,6 +3,9 @@ import numpy as np
 import joblib
 import os
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 def predict_delays(train_number, target_date):
     """Predict delays for a train on a given date."""
@@ -17,7 +20,7 @@ def predict_delays(train_number, target_date):
         encoder = joblib.load(encoder_file)
         history = pd.read_csv(history_file, parse_dates=["date"])
     except Exception as e:
-        print(f"Error loading files: {e}")
+        logger.error(f"Error loading files: {e}")
         return None
 
     # Filter stations from history - these define the train's route
@@ -39,8 +42,14 @@ def predict_delays(train_number, target_date):
     predict_df["day_sin"] = np.sin(2 * np.pi * predict_df["day"] / 31)
     predict_df["day_cos"] = np.cos(2 * np.pi * predict_df["day"] / 31)
 
-    # Encode stations
-    predict_df["station_encoded"] = encoder.transform(predict_df["station"])
+    # Encode stations with error handling for unseen stations
+    try:
+        predict_df["station_encoded"] = encoder.transform(predict_df["station"])
+    except ValueError as e:
+        logger.warning(f"Found unseen stations in prediction data: {e}")
+        # For unseen stations, use the most common station code as default
+        default_code = encoder.transform([encoder.classes_[0]])[0]
+        predict_df["station_encoded"] = default_code
 
     # To get lag features, merge with history delays for past days for each station
     history_sorted = history.sort_values(["station", "date"])
@@ -108,8 +117,8 @@ def predict_delays(train_number, target_date):
     delays = dict(zip(predict_df["station"], predict_df["predicted_delay"]))
     
     # Print predictions for debugging
-    print("\nPredicted delays:")
+    logger.info("\nPredicted delays:")
     for station, delay in delays.items():
-        print(f"{station}: {delay:.2f} minutes")
+        logger.info(f"{station}: {delay:.2f} minutes")
     
     return delays

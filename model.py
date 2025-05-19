@@ -52,7 +52,7 @@ def train_model(train_number):
     df["day_sin"] = np.sin(2 * np.pi * df["day"] / 31)
     df["day_cos"] = np.cos(2 * np.pi * df["day"] / 31)
     
-    # Encode stations
+    # Encode stations with unknown handling
     encoder = LabelEncoder()
     df["station_encoded"] = encoder.fit_transform(df["station"])
     print("\nStation encoding:")
@@ -90,9 +90,9 @@ def train_model(train_number):
     # Train model with better parameters
     model = xgb.XGBRegressor(
         objective='reg:squarederror',
-        n_estimators=500,  # Increased from 200
-        max_depth=8,       # Increased from 6
-        learning_rate=0.05, # Decreased from 0.1
+        n_estimators=500,
+        max_depth=8,
+        learning_rate=0.05,
         min_child_weight=3,
         subsample=0.8,
         colsample_bytree=0.8,

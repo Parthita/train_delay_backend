@@ -16,6 +16,29 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+def load_station_codes():
+    """Load station codes from file or return empty dict if file not found."""
+    try:
+        # Try multiple possible locations for stationcode.json
+        possible_paths = [
+            Path("stationcode.json"),  # Current directory
+            Path("pipeline_output/stationcode.json"),  # pipeline_output directory
+            Path("/app/pipeline_output/stationcode.json"),  # Docker container path
+            Path(os.path.dirname(os.path.abspath(__file__))) / "stationcode.json"  # Script directory
+        ]
+        
+        for path in possible_paths:
+            if path.exists():
+                logger.info(f"Loading station codes from {path}")
+                with open(path, 'r') as f:
+                    return json.load(f)
+        
+        logger.warning("Station codes file not found in any location, using empty dictionary")
+        return {}
+    except Exception as e:
+        logger.error(f"Error loading station codes: {e}")
+        return {}
+
 # Initialize pipeline with error handling
 try:
     pipeline = TrainPipeline()
@@ -29,21 +52,6 @@ def validate_station_code(code):
         return False
     # Station codes are typically 3-4 characters, alphanumeric
     return bool(re.match(r'^[A-Z0-9]{3,4}$', code.upper()))
-
-def load_station_codes():
-    """Load station codes from file or return empty dict if file not found."""
-    try:
-        output_dir = Path("pipeline_output")
-        station_file = output_dir / 'stationcode.json'
-        if station_file.exists():
-            with open(station_file, 'r') as f:
-                return json.load(f)
-        else:
-            logger.warning("Station codes file not found, using empty dictionary")
-            return {}
-    except Exception as e:
-        logger.error(f"Error loading station codes: {e}")
-        return {}
 
 @app.route('/api/trains-between', methods=['GET'])
 def get_trains_between():

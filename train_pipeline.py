@@ -126,8 +126,21 @@ class TrainPipeline:
         
         # Initialize file paths
         html_file = None
-        csv_file = Path(f"{train_number}.csv")  # Keep in current directory for model.py
+        csv_file = Path(f"{train_number}.csv")
         model_paths = self._get_model_paths(train_number)
+        
+        # Check if we already have a model and history
+        if all(path.exists() for path in model_paths.values()) and csv_file.exists():
+            logger.info(f"Using existing model and history for train {train_number}")
+            try:
+                # Step 4: Predict delays using existing model
+                logger.info(f"Predicting delays for train {train_number} on {date}...")
+                delays = predict_delays(train_number, date)
+                if delays:
+                    train_info['predicted_delays'] = delays
+                    return train_info
+            except Exception as e:
+                logger.error(f"Error using existing model for train {train_number}: {e}")
         
         try:
             # Step 1: Get delay history with timeout
@@ -136,54 +149,56 @@ class TrainPipeline:
                 html_file = download_html(train_name, train_number)
                 if not html_file:
                     logger.error(f"Failed to download HTML for train {train_number}")
-                    return None
+                    return self._create_empty_response(train_info)
             except TimeoutError:
                 logger.error(f"Timeout while downloading HTML for train {train_number}")
-                return None
+                return self._create_empty_response(train_info)
             except Exception as e:
                 logger.error(f"Error downloading HTML for train {train_number}: {e}")
-                return None
+                return self._create_empty_response(train_info)
                 
             # Step 2: Extract delay data with timeout
             logger.info(f"Extracting delay data from HTML...")
             try:
-                extract_delay_data_from_html(html_file, train_number)
+                if not extract_delay_data_from_html(html_file, train_number):
+                    logger.warning(f"No delay data found in HTML for train {train_number}")
+                    return self._create_empty_response(train_info)
             except TimeoutError:
                 logger.error(f"Timeout while extracting delay data for train {train_number}")
-                return None
+                return self._create_empty_response(train_info)
             except Exception as e:
                 logger.error(f"Error extracting delay data for train {train_number}: {e}")
-                return None
+                return self._create_empty_response(train_info)
             
             # Wait for CSV file to exist
-            if not self._wait_for_file(csv_file):
+            if not self._wait_for_file(csv_file, timeout=5):  # Reduced timeout
                 logger.error(f"No delay history found for train {train_number}")
-                return None
+                return self._create_empty_response(train_info)
             
             # Check if we have enough data
             df = pd.read_csv(csv_file)
             if len(df) < 2:  # Need at least 2 samples for train/test split
                 logger.warning(f"Not enough delay data for train {train_number} (only {len(df)} samples)")
-                return None
+                return self._create_empty_response(train_info)
             
             # Step 3: Train model
             logger.info(f"Training model for train {train_number}...")
-            model_result = train_model(train_number)  # model.py expects CSV in current directory
+            model_result = train_model(train_number)
             if not model_result:
                 logger.warning(f"Could not train model for train {train_number} - skipping")
-                return None
+                return self._create_empty_response(train_info)
             
             # Wait for model files to be saved
-            if not all(self._wait_for_file(path) for path in model_paths.values()):
+            if not all(self._wait_for_file(path, timeout=5) for path in model_paths.values()):  # Reduced timeout
                 logger.error(f"Model files not found for train {train_number}")
-                return None
+                return self._create_empty_response(train_info)
             
             # Step 4: Predict delays
             logger.info(f"Predicting delays for train {train_number} on {date}...")
             delays = predict_delays(train_number, date)
             if not delays:
                 logger.error(f"Failed to predict delays for train {train_number}")
-                return None
+                return self._create_empty_response(train_info)
             
             # Debug logging for delays
             logger.info("\nRaw delays from model:")
@@ -192,21 +207,23 @@ class TrainPipeline:
             
             # Add predicted delays to train info
             train_info['predicted_delays'] = delays
-            
             return train_info
             
         except Exception as e:
             logger.error(f"Error processing train {train_number}: {e}")
-            # Return train info with "no data found" for all stations
-            train_info['predicted_delays'] = {station['code']: "no data found" 
-                                            for station in train_info.get('stations', [])}
-            return train_info
+            return self._create_empty_response(train_info)
         finally:
             # Clean up temporary files
             self._cleanup_files([html_file, csv_file])
             # Don't delete model files until after prediction is done
             self._cleanup_files(model_paths.values())
     
+    def _create_empty_response(self, train_info):
+        """Create a response with 'no data found' for all stations."""
+        train_info['predicted_delays'] = {station['code']: "no data found" 
+                                        for station in train_info.get('stations', [])}
+        return train_info
+
     def _get_station_info(self, station_code):
         """Get station information from stationcode.json."""
         if not station_code:

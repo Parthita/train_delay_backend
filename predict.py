@@ -124,15 +124,14 @@ def predict_delays(train_number, target_date):
             predict_df = predict_df.merge(lag_data, on="station", how="left")
 
         # Fill missing lag delays with median of that station's delays
+        station_medians = history_sorted.groupby("station")["delay_minutes"].median()
         for lag in lags:
             col = f"prev_delay_{lag}"
-            station_medians = history_sorted.groupby("station")["delay_minutes"].median()
-            for station in predict_df["station"].unique():
-                mask = predict_df["station"] == station
-                if station in station_medians:
-                    predict_df.loc[mask, col] = predict_df.loc[mask, col].fillna(station_medians[station])
-                else:
-                    predict_df.loc[mask, col] = predict_df.loc[mask, col].fillna(0)
+            predict_df[col] = predict_df.apply(
+                lambda row: station_medians.get(row["station"], 0) 
+                if pd.isna(row[col]) else row[col], 
+                axis=1
+            )
     except Exception as e:
         logger.error(f"Error calculating lag features: {e}")
         return {station: "no data found" for station in stations}
@@ -156,17 +155,15 @@ def predict_delays(train_number, target_date):
 
     try:
         logger.info("Calculating rolling features")
-        rolling_means = []
-        rolling_medians = []
-
+        # Calculate rolling features for all stations at once
+        rolling_features = []
         for st in stations:
             rm = get_rolling_feature(st, target_date, 3, "mean")
-            rolling_means.append(rm)
             rmd = get_rolling_feature(st, target_date, 7, "median")
-            rolling_medians.append(rmd)
-
-        predict_df["rolling_mean_3"] = rolling_means
-        predict_df["rolling_median_7"] = rolling_medians
+            rolling_features.append((rm, rmd))
+        
+        predict_df["rolling_mean_3"] = [x[0] for x in rolling_features]
+        predict_df["rolling_median_7"] = [x[1] for x in rolling_features]
     except Exception as e:
         logger.error(f"Error calculating rolling features: {e}")
         return {station: "no data found" for station in stations}

@@ -129,47 +129,20 @@ class TrainPipeline:
         }
         
         try:
-            # Step 1: Get delay history with retries
+            # Step 1: Get delay history
             logger.info(f"Downloading HTML for {train_name} ({train_number})...")
-            max_retries = 3
-            retry_delay = 5
-            
-            for attempt in range(max_retries):
-                try:
-                    html_file = download_html(train_name, train_number)
-                    if html_file:
-                        break
-                    if attempt < max_retries - 1:
-                        logger.warning(f"Retry {attempt + 1}/{max_retries} for train {train_number}")
-                        time.sleep(retry_delay)
-                except Exception as e:
-                    logger.error(f"Error downloading HTML for train {train_number} (attempt {attempt + 1}): {e}")
-                    if attempt < max_retries - 1:
-                        time.sleep(retry_delay)
-                        continue
-                    return self._create_empty_response(train_info)
-            
+            html_file = download_html(train_name, train_number)
             if not html_file:
-                logger.error(f"Failed to download HTML for train {train_number} after {max_retries} attempts")
+                logger.error(f"Failed to download HTML for train {train_number}")
                 return self._create_empty_response(train_info)
-                
-            # Step 2: Extract delay data with retries
-            logger.info(f"Extracting delay data from HTML...")
-            for attempt in range(max_retries):
-                try:
-                    if extract_delay_data_from_html(html_file, train_number):
-                        break
-                    if attempt < max_retries - 1:
-                        logger.warning(f"Retry {attempt + 1}/{max_retries} for extracting data from train {train_number}")
-                        time.sleep(retry_delay)
-                except Exception as e:
-                    logger.error(f"Error extracting delay data for train {train_number} (attempt {attempt + 1}): {e}")
-                    if attempt < max_retries - 1:
-                        time.sleep(retry_delay)
-                        continue
-                    return self._create_empty_response(train_info)
             
-            # Wait for CSV file to exist with increased timeout
+            # Step 2: Extract delay data
+            logger.info(f"Extracting delay data from HTML...")
+            if not extract_delay_data_from_html(html_file, train_number):
+                logger.warning(f"No delay data found in HTML for train {train_number}")
+                return self._create_empty_response(train_info)
+            
+            # Wait for CSV file to exist
             if not self._wait_for_file(csv_file, timeout=30):  # Increased timeout to 30 seconds
                 logger.error(f"No delay history found for train {train_number}")
                 return self._create_empty_response(train_info)
@@ -180,51 +153,23 @@ class TrainPipeline:
                 logger.warning(f"Not enough delay data for train {train_number} (only {len(df)} samples)")
                 return self._create_empty_response(train_info)
             
-            # Step 3: Train model with retries
+            # Step 3: Train model
             logger.info(f"Training model for train {train_number}...")
-            for attempt in range(max_retries):
-                try:
-                    model_result = train_model(train_number)
-                    if model_result:
-                        break
-                    if attempt < max_retries - 1:
-                        logger.warning(f"Retry {attempt + 1}/{max_retries} for training model for train {train_number}")
-                        time.sleep(retry_delay)
-                except Exception as e:
-                    logger.error(f"Error training model for train {train_number} (attempt {attempt + 1}): {e}")
-                    if attempt < max_retries - 1:
-                        time.sleep(retry_delay)
-                        continue
-                    return self._create_empty_response(train_info)
-            
+            model_result = train_model(train_number)
             if not model_result:
-                logger.warning(f"Could not train model for train {train_number} after {max_retries} attempts")
+                logger.warning(f"Could not train model for train {train_number}")
                 return self._create_empty_response(train_info)
             
-            # Wait for model files to be saved with increased timeout
+            # Wait for model files to be saved
             if not all(self._wait_for_file(path, timeout=30) for path in model_paths.values()):  # Increased timeout to 30 seconds
                 logger.error(f"Model files not found for train {train_number}")
                 return self._create_empty_response(train_info)
             
-            # Step 4: Predict delays with retries
+            # Step 4: Predict delays
             logger.info(f"Predicting delays for train {train_number} on {date}...")
-            for attempt in range(max_retries):
-                try:
-                    delays = predict_delays(train_number, date)
-                    if delays:
-                        break
-                    if attempt < max_retries - 1:
-                        logger.warning(f"Retry {attempt + 1}/{max_retries} for predicting delays for train {train_number}")
-                        time.sleep(retry_delay)
-                except Exception as e:
-                    logger.error(f"Error predicting delays for train {train_number} (attempt {attempt + 1}): {e}")
-                    if attempt < max_retries - 1:
-                        time.sleep(retry_delay)
-                        continue
-                    return self._create_empty_response(train_info)
-            
+            delays = predict_delays(train_number, date)
             if not delays:
-                logger.error(f"Failed to predict delays for train {train_number} after {max_retries} attempts")
+                logger.error(f"Failed to predict delays for train {train_number}")
                 return self._create_empty_response(train_info)
             
             # Debug logging for delays

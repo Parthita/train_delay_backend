@@ -4,7 +4,7 @@ import json
 from bs4 import BeautifulSoup
 import time
 
-def download_html(train_name: str, train_number: str, max_retries=3, retry_delay=5):
+def download_html(train_name: str, train_number: str):
     url = f"https://etrain.info/train/{train_name.replace(' ', '-')}-{train_number}/history?d=1y"
     
     print(f"Downloading HTML for {train_name} ({train_number})...")
@@ -17,13 +17,31 @@ def download_html(train_name: str, train_number: str, max_retries=3, retry_delay
         'Connection': 'keep-alive',
     }
     
-    for attempt in range(max_retries):
+    try:
+        # First attempt with normal timeout
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        if response.status_code == 200:
+            html_file = f"{train_number}_history.html"
+            with open(html_file, "w", encoding="utf-8") as file:
+                file.write(response.text)
+            print(f"HTML file saved as {html_file}")
+            print(f"Response size: {len(response.text)} bytes")
+            return html_file
+        else:
+            print(f"Failed to download the HTML. Status code: {response.status_code}")
+            print(f"Response content: {response.text[:500]}")
+            return None
+            
+    except requests.exceptions.Timeout:
+        print("First attempt timed out, trying with longer timeout...")
         try:
-            response = requests.get(url, headers=headers, timeout=120)  # Increased timeout to 120 seconds
-            response.raise_for_status()  # Raise an exception for bad status codes
+            # Second attempt with longer timeout
+            response = requests.get(url, headers=headers, timeout=120)
+            response.raise_for_status()
             
             if response.status_code == 200:
-                # Save the HTML content to a file
                 html_file = f"{train_number}_history.html"
                 with open(html_file, "w", encoding="utf-8") as file:
                     file.write(response.text)
@@ -32,35 +50,22 @@ def download_html(train_name: str, train_number: str, max_retries=3, retry_delay
                 return html_file
             else:
                 print(f"Failed to download the HTML. Status code: {response.status_code}")
-                print(f"Response content: {response.text[:500]}")  # Print first 500 chars of response
-                if attempt < max_retries - 1:
-                    print(f"Retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    continue
+                print(f"Response content: {response.text[:500]}")
                 return None
+                
         except requests.exceptions.Timeout:
-            print(f"Request timed out after 120 seconds (attempt {attempt + 1}/{max_retries})")
-            if attempt < max_retries - 1:
-                print(f"Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-                continue
+            print("Second attempt also timed out after 120 seconds")
             return None
         except requests.exceptions.RequestException as e:
             print(f"Request failed: {e}")
-            if attempt < max_retries - 1:
-                print(f"Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-                continue
             return None
-        except Exception as e:
-            print(f"Unexpected error: {e}")
-            if attempt < max_retries - 1:
-                print(f"Retrying in {retry_delay} seconds...")
-                time.sleep(retry_delay)
-                continue
-            return None
-    
-    return None
+            
+    except requests.exceptions.RequestException as e:
+        print(f"Request failed: {e}")
+        return None
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return None
 
 def extract_delay_data_from_html(html_file: str, train_number: str):
     # Load the saved HTML file
@@ -152,4 +157,5 @@ if __name__ == "__main__":
 
     # If HTML file is downloaded successfully, extract delay data
     if html_file:
+        extract_delay_data_from_html(html_file, train_number)
         extract_delay_data_from_html(html_file, train_number)

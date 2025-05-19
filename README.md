@@ -23,7 +23,47 @@ Parameters:
 - `destination_code`: Destination station code
 - `date`: Journey date (YYYYMMDD format)
 
-Returns list of trains between stations with predicted delays.
+Example Request:
+```bash
+curl "http://localhost:5000/api/trains-between?source_name=Howrah%20Jn&source_code=HWH&destination_name=New%20Delhi&destination_code=NDLS&date=20240318"
+```
+
+Example Response:
+```json
+{
+    "status": "success",
+    "data": [
+        {
+            "train_number": "12303",
+            "train_name": "Poorva Express",
+            "source": "Howrah Jn",
+            "departure_time": "08:00",
+            "destination": "New Delhi",
+            "arrival_time": "08:00",
+            "duration": "24:00",
+            "source_delay": 0.0,
+            "destination_delay": 17.14,
+            "running_days": ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
+            "booking_classes": ["1A", "2A", "3A", "SL"],
+            "has_pantry": true
+        },
+        {
+            "train_number": "12304",
+            "train_name": "Poorva Express",
+            "source": "New Delhi",
+            "departure_time": "08:00",
+            "destination": "Howrah Jn",
+            "arrival_time": "08:00",
+            "duration": "24:00",
+            "source_delay": 0.0,
+            "destination_delay": 15.25,
+            "running_days": ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"],
+            "booking_classes": ["1A", "2A", "3A", "SL"],
+            "has_pantry": true
+        }
+    ]
+}
+```
 
 ### 2. Get Train Schedule
 ```
@@ -34,7 +74,49 @@ Parameters:
 - `train_number`: Train number
 - `date`: Journey date (YYYYMMDD format)
 
-Returns complete train schedule with predicted delays for each station.
+Example Request:
+```bash
+curl "http://localhost:5000/api/train-schedule?train_name=Poorva%20Express&train_number=12303&date=20240318"
+```
+
+Example Response:
+```json
+{
+    "status": "success",
+    "data": {
+        "train_info": {
+            "name": "Poorva Express",
+            "number": "12303",
+            "type": "Superfast Express"
+        },
+        "schedule": [
+            {
+                "station": "Howrah Jn",
+                "station_code": "HWH",
+                "arrival": "Source",
+                "departure": "08:00",
+                "predicted_delay": 0.0,
+                "is_source": true
+            },
+            {
+                "station": "Asansol Jn",
+                "station_code": "ASN",
+                "arrival": "10:45",
+                "departure": "10:50",
+                "predicted_delay": 5.2
+            },
+            {
+                "station": "New Delhi",
+                "station_code": "NDLS",
+                "arrival": "08:00",
+                "departure": "Destination",
+                "predicted_delay": 17.14,
+                "is_destination": true
+            }
+        ]
+    }
+}
+```
 
 ### 3. Get Train Running Status
 ```
@@ -45,11 +127,106 @@ Parameters:
 - `station_name`: Current station name
 - `date`: Journey date (YYYYMMDD format)
 
-Returns current running status with delay predictions:
-- Current delay from real-time data
-- Predicted delay from ML model
-- Comparison of delays
-- Reliability indicator (if prediction is within 15 minutes)
+Example Request:
+```bash
+curl "http://localhost:5000/api/train-running-status?train_number=12303&station_name=New-Delhi-NDLS&date=20240318"
+```
+
+Example Response (When Train Journey is Completed):
+```json
+{
+    "status": "success",
+    "message": "Train journey completed",
+    "data": {
+        "stations": [],
+        "train_info": {
+            "number": "12303",
+            "scraped_at": "2025-05-19 00:03:53"
+        }
+    }
+}
+```
+
+Example Response (When Prediction is Reliable):
+```json
+{
+    "status": "success",
+    "data": {
+        "current_status": {
+            "train_info": {
+                "number": "12303",
+                "scraped_at": "2024-03-18 10:30:00"
+            },
+            "stations": [
+                {
+                    "station_name": "Howrah Jn",
+                    "day": "Day 1",
+                    "date": "18 Mar",
+                    "arrival": "Source",
+                    "departure": "08:00",
+                    "delay": "0 min",
+                    "status": "Completed"
+                },
+                {
+                    "station_name": "New Delhi",
+                    "day": "Day 2",
+                    "date": "19 Mar",
+                    "arrival": "08:00",
+                    "departure": "Destination",
+                    "delay": "15 min late",
+                    "status": "Pending"
+                }
+            ]
+        },
+        "current_station": "New Delhi",
+        "current_delay": 15,
+        "predicted_delay": 12,
+        "delay_difference": 3,
+        "is_prediction_reliable": true
+    }
+}
+```
+
+Example Response (When Prediction is Not Reliable):
+```json
+{
+    "status": "success",
+    "data": {
+        "current_status": {
+            "train_info": {
+                "number": "12303",
+                "scraped_at": "2024-03-18 10:30:00"
+            },
+            "stations": [...]
+        },
+        "current_station": "New Delhi",
+        "current_delay": 45,
+        "predicted_delay": 12,
+        "delay_difference": 33,
+        "is_prediction_reliable": false
+    }
+}
+```
+
+Example Response (When No Prediction Available):
+```json
+{
+    "status": "success",
+    "data": {
+        "current_status": {
+            "train_info": {
+                "number": "12303",
+                "scraped_at": "2024-03-18 10:30:00"
+            },
+            "stations": [...]
+        },
+        "current_station": "New Delhi",
+        "current_delay": 15,
+        "prediction_available": false,
+        "message": "No predictions available for this train"
+    }
+}
+```
 
 ## Setup
 
@@ -101,51 +278,6 @@ python app.py
    - Responses include both current status and predictions
    - Error handling for various scenarios
 
-## Response Examples
-
-### Train Running Status
-```json
-{
-    "status": "success",
-    "data": {
-        "current_status": {
-            "train_info": {
-                "number": "12304",
-                "scraped_at": "2024-03-18 10:30:00"
-            },
-            "stations": [...]
-        },
-        "current_station": "New Delhi",
-        "current_delay": 15,
-        "predicted_delay": 12,
-        "delay_difference": 3,
-        "is_prediction_reliable": true
-    }
-}
-```
-
-### Train Schedule
-```json
-{
-    "status": "success",
-    "data": {
-        "train_info": {
-            "name": "Poorva Express",
-            "number": "12303"
-        },
-        "schedule": [
-            {
-                "station": "Howrah",
-                "arrival": "23:00",
-                "departure": "23:15",
-                "predicted_delay": 0
-            },
-            ...
-        ]
-    }
-}
-```
-
 ## Error Handling
 
 The system handles various error scenarios:
@@ -154,6 +286,13 @@ The system handles various error scenarios:
 - Missing historical data
 - Model prediction failures
 - Station name mismatches
+
+Error Response Example:
+```json
+{
+    "error": "Missing required field: train_number"
+}
+```
 
 ## Contributing
 
@@ -165,4 +304,4 @@ The system handles various error scenarios:
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
